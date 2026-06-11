@@ -107,7 +107,7 @@ async function fetchScryfall(names, onProgress) {
     }
   }
   const notFound = [];
-  const batchSize = 75;
+  const batchSize = 20;
   const total = Math.ceil(unique.length / batchSize);
 
   for (let i = 0; i < unique.length; i += batchSize) {

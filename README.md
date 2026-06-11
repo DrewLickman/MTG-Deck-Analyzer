@@ -1,0 +1,2 @@
+# MTG Deck Analyzer
+

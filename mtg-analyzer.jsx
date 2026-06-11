@@ -3,6 +3,20 @@
 import { useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
+const SCRYFALL_BATCH_SIZE = 75;
+const MIN_SCORE = -10;
+const MAX_SCORE = 10;
+const TARGET_LANDS_MIN = 36;
+const TARGET_LANDS_MAX = 40;
+const TARGET_RAMP_MIN = 10;
+const TARGET_RAMP_CRIT = 8;
+const TARGET_REMOVAL_MIN = 5;
+const TARGET_REMOVAL_CRIT = 3;
+const TARGET_WIPES_MIN = 3;
+const TARGET_WIPES_CRIT = 2;
+const TARGET_AVG_CMC = 3.2;
+const SPLASH_THRESHOLD = 0.15;
+
 const COLOR_HEX = { W:"#f9f0a0", U:"#6ab0e8", B:"#a78ccc", R:"#f4645f", G:"#5cb87a", C:"#9ca3af" };
 const COLOR_LABEL = { W:"White", U:"Blue", B:"Black", R:"Red", G:"Green", C:"Colorless/Generic" };
 const BASICS = new Set(["Mountain","Swamp","Island","Forest","Plains","Wastes"]);
@@ -659,6 +673,41 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("overview");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
+  const [debugMode, setDebugMode] = useState(false);
+
+  async function handleMoxfieldImport() {
+    if (!moxfieldUrl) return;
+    setLoading(true); setError(null);
+    try {
+        const match = moxfieldUrl.match(/moxfield\.com\/decks\/([a-zA-Z0-9_-]+)/);
+        if (!match) throw new Error("Invalid Moxfield URL. Must contain /decks/ID");
+        setProgress("Fetching from Moxfield API...");
+        
+        const res = await fetch(`https://api2.moxfield.com/v3/decks/all/${match[1]}`);
+        if (!res.ok) throw new Error("Moxfield API Error");
+        const data = await res.json();
+        
+        let importedList = "";
+        const cmds = Object.values(data.boards?.commanders?.cards || {});
+        if (cmds.length > 0) setCmdInput(cmds[0].card.name);
+        
+        const processBoard = (board) => {
+            return Object.values(board || {}).map(c => `${c.quantity} ${c.card.name}`).join("\n");
+        };
+
+        importedList += processBoard(data.boards?.mainboard?.cards);
+        
+        const sb = processBoard(data.boards?.sideboard?.cards);
+        if (sb) importedList += "\n\nSIDEBOARD:\n" + sb;
+        
+        setDeckInput(importedList);
+    } catch (e) {
+        setError(e.message);
+    } finally {
+        setLoading(false);
+        setProgress("");
+    }
+  }
 
   async function runAnalysis() {
     if (!deckInput.trim()) { setError("Please paste your decklist."); return; }
@@ -738,15 +787,16 @@ export default function App() {
     }) : [];
 
   const cmcBuckets = a ? (() => {
-    const b = {"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6+":0};
-    for (const s of (a.scores||[])) {
-      const name = s.name;
-      const card = cardMap[name] || cardMap[name?.split(" // ")[0]];
-      const c = card?.cmc ?? 0;
-      const key = c >= 6 ? "6+" : String(Math.floor(c));
-      b[key] = (b[key]||0) + 1;
-    }
-    return Object.entries(b).map(([k,v])=>({cmc:k,count:v}));
+    const b = {};
+    let maxCmc = 0;
+    const cardCmcs = (a.scores || []).map(s => {
+      const c = cardMap[s.name] || cardMap[s.name?.split(" // ")[0]];
+      return Math.floor(c?.cmc ?? 0);
+    });
+    maxCmc = Math.max(0, ...cardCmcs);
+    for (let i = 0; i <= maxCmc; i++) b[i.toString()] = 0;
+    for (const c of cardCmcs) b[c.toString()]++;
+    return Object.entries(b).map(([k, v]) => ({ cmc: k, count: v }));
   })() : [];
 
   // Input screen
@@ -758,6 +808,16 @@ export default function App() {
         <p className="text-gray-400 text-sm mt-1">Mana, curve, synergy, and upgrade review</p>
       </div>
       <div className="flex-1 p-6 max-w-3xl mx-auto w-full flex flex-col gap-4">
+        {/* Moxfield Import Section */}
+        <div className="flex gap-2">
+            <input 
+                value={moxfieldUrl} 
+                onChange={e => setMoxfieldUrl(e.target.value)} 
+                placeholder="https://www.moxfield.com/decks/..." 
+                className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 text-sm focus:border-red-600"
+            />
+            <button onClick={handleMoxfieldImport} className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2.5 px-4 rounded-lg border border-gray-700">Import</button>
+        </div>
         <div>
           <label className="text-xs text-gray-400 uppercase tracking-widest block mb-1">
             Commander&nbsp;<span className="text-gray-600 normal-case">— optional if listed first in decklist</span>

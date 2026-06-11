@@ -665,6 +665,7 @@ function mergeAnalysis(remoteAnalysis, localAnalysis) {
 export default function App() {
   const [cmdInput, setCmdInput] = useState("");
   const [deckInput, setDeckInput] = useState("");
+  const [moxfieldUrl, setMoxfieldUrl] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [cardMap, setCardMap] = useState({});
   const [loading, setLoading] = useState(false);
@@ -816,7 +817,7 @@ export default function App() {
                 placeholder="https://www.moxfield.com/decks/..." 
                 className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-gray-100 text-sm focus:border-red-600"
             />
-            <button onClick={handleMoxfieldImport} className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2.5 px-4 rounded-lg border border-gray-700">Import</button>
+            <button onClick={handleMoxfieldImport} className="bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2.5 px-4 rounded-lg border border-gray-700">Import (currently non-functional)</button>
         </div>
         <div>
           <label className="text-xs text-gray-400 uppercase tracking-widest block mb-1">

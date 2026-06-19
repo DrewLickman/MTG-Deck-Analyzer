@@ -1,0 +1,47 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { analyzeBracket } from "../lib/commanderBrackets.mjs";
+
+function deckWith(names) {
+  return {
+    commanders: [{ qty: 1, name: "Kykar, Wind's Fury" }],
+    companions: [],
+    main: names.map((name) => ({ qty: 1, name })),
+    sideboard: [],
+    considering: [],
+    inferenceWarnings: [],
+  };
+}
+
+function card(name, text = "") {
+  return {
+    name,
+    cmc: 2,
+    mana_cost: "{2}",
+    oracle_text: text,
+    type_line: "Instant",
+    legalities: { commander: "legal" },
+  };
+}
+
+test("Game Changer count raises the bracket floor", () => {
+  const deck = deckWith(["Rhystic Study", "The One Ring", "Gaea's Cradle", "Mana Drain"]);
+  const result = analyzeBracket(deck, {}, { avgCmc: 2.5, rampCount: 10, removalCount: 4 });
+
+  assert.equal(result.gameChangers.length, 4);
+  assert.ok(result.bracket >= 4);
+});
+
+test("compact combo and speed signals produce a higher bracket", () => {
+  const deck = deckWith(["Thassa's Oracle", "Demonic Consultation", "Ancient Tomb", "Mana Vault"]);
+  const cardMap = {
+    "Thassa's Oracle": card("Thassa's Oracle"),
+    "Demonic Consultation": card("Demonic Consultation", "Name a card. Exile cards from your library."),
+    "Ancient Tomb": card("Ancient Tomb"),
+    "Mana Vault": card("Mana Vault"),
+  };
+  const result = analyzeBracket(deck, cardMap, { avgCmc: 2.2, rampCount: 10, removalCount: 4 });
+
+  assert.ok(result.comboSignals.length >= 1);
+  assert.ok(result.bracket >= 4);
+});

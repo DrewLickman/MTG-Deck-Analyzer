@@ -40,6 +40,14 @@ test("updated unban Game Changers are counted", () => {
   assert.ok(result.bracket >= 4);
 });
 
+test("common noncommander Game Changers beyond the starter list are counted", () => {
+  const deck = deckWith(["Demonic Tutor", "Fierce Guardianship", "Deflecting Swat", "Ad Nauseam"]);
+  const result = analyzeBracket(deck, {}, { avgCmc: 2.5, rampCount: 8, removalCount: 4 });
+
+  assert.deepEqual(result.gameChangers, ["Demonic Tutor", "Fierce Guardianship", "Deflecting Swat", "Ad Nauseam"]);
+  assert.ok(result.bracket >= 4);
+});
+
 test("compact combo and speed signals produce a higher bracket", () => {
   const deck = deckWith(["Thassa's Oracle", "Demonic Consultation", "Ancient Tomb", "Mana Vault"]);
   const cardMap = {

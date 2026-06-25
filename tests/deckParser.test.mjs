@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseDecklist } from "../lib/deckParser.mjs";
+import { parseDecklist, validateCommandZone } from "../lib/deckParser.mjs";
+
+function card(name, oracle_text = "") {
+  return { name, oracle_text, type_line: "Legendary Creature", legalities: { commander: "legal" } };
+}
 
 test("infers one commander from a separated bottom block", () => {
   const deck = parseDecklist(`
@@ -152,4 +156,32 @@ test("parses common quantity and set-code export lines", () => {
   assert.deepEqual(deck.commanderNames, ["Kykar, Wind's Fury"]);
   assert.equal(deck.main[0].name, "Sol Ring");
   assert.equal(deck.main[1].name, "Arcane Signet");
+});
+
+test("valid partner and companion flags come from card text", () => {
+  const deck = parseDecklist(`
+Commanders:
+1 Brinelin, the Moon Kraken
+1 Gilanra, Caller of Wirewood
+
+Companion:
+1 Keruga, the Macrosage
+
+Deck:
+1 Sol Ring
+`);
+  const validated = validateCommandZone(
+    deck,
+    {
+      "Brinelin, the Moon Kraken": card("Brinelin, the Moon Kraken", "Partner"),
+      "Gilanra, Caller of Wirewood": card("Gilanra, Caller of Wirewood", "Partner"),
+      "Keruga, the Macrosage": card("Keruga, the Macrosage", "Companion"),
+      "Sol Ring": card("Sol Ring"),
+    },
+    (cardMap, name) => cardMap[name],
+    (cardData) => (cardData?.oracle_text || "").toLowerCase(),
+  );
+
+  assert.equal(validated.hasValidPartner, true);
+  assert.equal(validated.hasValidCompanion, true);
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildLocalAnalysis } from "../lib/deckAnalysis.mjs";
-import { makeBasicLandCard } from "../lib/cardUtils.mjs";
+import { formatManaSymbols, formatTextSymbols, makeBasicLandCard } from "../lib/cardUtils.mjs";
 import { parseDecklist } from "../lib/deckParser.mjs";
 
 function card(name, overrides = {}) {
@@ -15,6 +15,11 @@ function card(name, overrides = {}) {
     ...overrides,
   };
 }
+
+test("mana symbols render as compact icons", () => {
+  assert.equal(formatManaSymbols("{3}{W}{B}"), "🔘🔘🔘⚪️⚫️");
+  assert.equal(formatTextSymbols("{T}: Add {C}{U}."), "↩️: Add 🔘🔵.");
+});
 
 test("commanders and companions are excluded from main counts while basics count as lands", () => {
   const deck = parseDecklist(`
@@ -111,9 +116,64 @@ Deck:
 
   assert.equal(analysis.stats.avgCmc, 3.05);
   assert.equal(mvThree.B, 10);
-  assert.equal(mvThree.U, 5);
-  assert.equal(mvThree.M, 2);
+  assert.equal(mvThree.U, 7);
+  assert.equal(mvThree.R, 2);
   assert.equal(mvThree.total, 17);
+});
+
+test("commanders appear in card scores and commander turn follows commander mana value", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Five Mana Commander
+
+Deck:
+36 Island
+1 Sol Ring
+1 Setup Spell
+`);
+  const cardMap = {
+    "Five Mana Commander": card("Five Mana Commander", { cmc: 5, mana_cost: "{3}{U}{R}", type_line: "Legendary Creature", oracle_text: "Whenever you cast an instant or sorcery spell, draw a card." }),
+    Island: makeBasicLandCard("Island"),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+    "Setup Spell": card("Setup Spell", { cmc: 2, mana_cost: "{1}{U}", type_line: "Instant", oracle_text: "Draw a card." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const commanderScore = analysis.scores.find((score) => score.name === "Five Mana Commander");
+  const commanderBand = analysis.structure.curveBands.find((band) => band.commanderNames.includes("Five Mana Commander"));
+
+  assert.ok(commanderScore);
+  assert.equal(commanderScore.protected, true);
+  assert.ok(commanderScore.roles.includes("commander"));
+  assert.equal(commanderBand.label, "Commander Turn");
+});
+
+test("ignored settings remove their category from overall score", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Seven Drop
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Trample." }),
+  };
+
+  const normal = buildLocalAnalysis(deck, cardMap, { analysisSettings: { avgManaValueTarget: 2 } });
+  const ignored = buildLocalAnalysis(deck, cardMap, { analysisSettings: { avgManaValueTarget: 2, ignoredSettings: ["avgManaValueTarget"] } });
+  const curve = ignored.scorecard.find((item) => item.key === "curve");
+  const expectedOverall = Math.round(
+    ignored.scorecard.filter((item) => !item.ignored).reduce((sum, item) => sum + item.score, 0) /
+    ignored.scorecard.filter((item) => !item.ignored).length,
+  );
+
+  assert.equal(curve.ignored, true);
+  assert.notEqual(normal.scorecard.find((item) => item.key === "curve").ignored, true);
+  assert.equal(ignored.overallScore, expectedOverall);
 });
 
 test("additional role tags are detected", () => {
@@ -203,4 +263,32 @@ Sideboard:
   assert.equal(coreScore.protected, true);
   assert.equal(analysis.upgrades.some((upgrade) => upgrade.cut === "Expensive Blank"), false);
   assert.ok(synergy.highlightCards.includes("Young Pyromancer"));
+});
+
+test("core identity cards propagate into synergy clusters", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Generic Commander
+
+Deck:
+36 Island
+1 Young Pyromancer
+1 Impact Tremors
+1 Token Spell
+`);
+  const cardMap = {
+    "Generic Commander": card("Generic Commander", { cmc: 4, mana_cost: "{4}", type_line: "Legendary Creature", oracle_text: "Ward 2." }),
+    Island: makeBasicLandCard("Island"),
+    "Young Pyromancer": card("Young Pyromancer", { cmc: 2, mana_cost: "{1}{R}", type_line: "Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a 1/1 token." }),
+    "Impact Tremors": card("Impact Tremors", { cmc: 2, mana_cost: "{1}{R}", type_line: "Enchantment", oracle_text: "Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent." }),
+    "Token Spell": card("Token Spell", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+  };
+
+  const withoutCore = buildLocalAnalysis(deck, cardMap);
+  const withCore = buildLocalAnalysis(deck, cardMap, { coreCards: ["Young Pyromancer"] });
+  const identityCluster = withCore.synergyClusters.find((cluster) => cluster.name === "Commander/Core Identity");
+
+  assert.equal(withoutCore.synergyClusters.some((cluster) => cluster.name === "Commander/Core Identity"), false);
+  assert.ok(identityCluster.cards.includes("Young Pyromancer"));
+  assert.ok(identityCluster.cards.includes("Token Spell"));
 });

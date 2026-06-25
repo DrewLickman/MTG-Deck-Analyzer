@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, getCardText, getManaColorBucket, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
+import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatManaSymbols, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { fetchScryfall } from "./lib/scryfall.mjs";
@@ -87,13 +87,11 @@ function RoleChip({ role }) {
   );
 }
 
-function ColorBadge({ card, compact = false }) {
-  const bucket = getManaColorBucket(card);
-  const label = COLOR_LABEL[bucket] || bucket;
+function ManaCostDisplay({ card }) {
+  const symbols = formatManaSymbols(getManaCost(card));
   return (
-    <span className="inline-flex items-center gap-1.5 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-300">
-      <span className="h-2.5 w-2.5 rounded-full border border-neutral-700" style={{ background: COLOR_HEX[bucket] || COLOR_HEX.C }} />
-      {!compact && <span>{label}</span>}
+    <span className="inline-flex min-h-7 items-center rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm leading-none text-neutral-100">
+      {symbols || "No cost"}
     </span>
   );
 }
@@ -303,7 +301,9 @@ function InputControls({
 }
 
 function InputPanel(props) {
-  const { draftDeck, hasAnalysis } = props;
+  const { draftDeck, hasAnalysis, sidePanelOpen } = props;
+
+  if (!sidePanelOpen) return null;
 
   return (
     <aside className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-4">
@@ -392,6 +392,15 @@ function SettingsPanel({ settings, setSettings }) {
   const updateSetting = (key, value) => {
     setSettings((current) => resolveAnalysisSettings({ ...current, [key]: value }));
   };
+  const toggleIgnoredSetting = (key) => {
+    setSettings((current) => {
+      const next = resolveAnalysisSettings(current);
+      const ignored = new Set(next.ignoredSettings || []);
+      if (ignored.has(key)) ignored.delete(key);
+      else ignored.add(key);
+      return resolveAnalysisSettings({ ...next, ignoredSettings: [...ignored] });
+    });
+  };
 
   return (
     <section className={panelClass("p-4 sm:p-5")}>
@@ -410,13 +419,28 @@ function SettingsPanel({ settings, setSettings }) {
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {SETTING_GROUPS.map((setting) => (
-          <label key={setting.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+          <label key={setting.key} className={`rounded-lg border p-3 ${resolved.ignoredSettings.includes(setting.key) ? "border-neutral-700 bg-neutral-950/60 opacity-70" : "border-neutral-800 bg-neutral-950"}`}>
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs uppercase tracking-wide text-neutral-500">{setting.label}</span>
-              <span className="font-mono text-sm text-neutral-100">{settingValue(resolved, setting.key)}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm text-neutral-100">{settingValue(resolved, setting.key)}</span>
+                <button
+                  type="button"
+                  title="Ignore this setting in overall score"
+                  aria-label={`Ignore ${setting.label} in overall score`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    toggleIgnoredSetting(setting.key);
+                  }}
+                  className={`h-6 w-6 rounded border text-xs font-bold ${resolved.ignoredSettings.includes(setting.key) ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-500 hover:border-amber-500 hover:text-amber-200"}`}
+                >
+                  x
+                </button>
+              </div>
             </div>
             <input
               type="range"
+              disabled={resolved.ignoredSettings.includes(setting.key)}
               min={setting.min}
               max={setting.max}
               step={setting.step}
@@ -424,6 +448,7 @@ function SettingsPanel({ settings, setSettings }) {
               onChange={(event) => updateSetting(setting.key, Number(event.target.value))}
               className="mt-3 w-full accent-amber-500"
             />
+            {resolved.ignoredSettings.includes(setting.key) && <div className="mt-2 text-xs text-amber-300">Ignored in overall score</div>}
           </label>
         ))}
       </div>
@@ -437,7 +462,7 @@ function ScorecardPanel({ item }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{item.label}</div>
-          <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{item.grade}</div>
+          <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{item.ignored ? "Ignored in overall score" : item.grade}</div>
         </div>
         <div className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-lg text-neutral-100">{item.score}</div>
       </div>
@@ -561,12 +586,20 @@ function OverviewTab({ analysis, deck }) {
         <div className="mt-3 space-y-3 text-sm">
           <div>
             <div className="text-neutral-500">Commander</div>
-            <div className="font-semibold text-neutral-100">{names(deck.commanders)}</div>
+            <div className="font-semibold text-neutral-100">{deck.commanders[0]?.name || "None"}</div>
           </div>
-          <div>
+          {deck.hasValidPartner && deck.commanders[1] && (
+            <div>
+              <div className="text-neutral-500">Partner</div>
+              <div className="font-semibold text-neutral-100">{deck.commanders[1].name}</div>
+            </div>
+          )}
+          {deck.hasValidCompanion && deck.companions.length > 0 && (
+            <div>
             <div className="text-neutral-500">Companion</div>
             <div className="font-semibold text-neutral-100">{names(deck.companions)}</div>
-          </div>
+            </div>
+          )}
           {deck.inferenceWarnings.map((warning) => (
             <StatusLine key={warning} ok={false}>{warning}</StatusLine>
           ))}
@@ -870,7 +903,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="font-medium leading-snug text-neutral-100">{score.name}</div>
-                      <ColorBadge card={card} compact />
+                      <ManaCostDisplay card={card} />
                     </div>
                     <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {score.note || "No special signal"}</div>
                   </div>
@@ -897,7 +930,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                   <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                   <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
                   <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
-                  <div className="mt-1 text-sm leading-6 text-neutral-300">{getCardText(card) || "No text available."}</div>
+                  <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
                 </div>
               )}
             </article>
@@ -936,7 +969,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                     <td className="px-4 py-3 font-medium text-neutral-100">
                       <div className="flex items-center gap-2">
                         <span>{score.name}</span>
-                        <ColorBadge card={card} compact />
+                        <ManaCostDisplay card={card} />
                         <button
                           type="button"
                           onClick={(event) => {
@@ -969,7 +1002,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                           </div>
                           <div>
                             <div className="text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
-                            <div className="mt-1 text-sm leading-6 text-neutral-300">{getCardText(card) || "No text available."}</div>
+                            <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
                           </div>
                         </div>
                       </td>
@@ -1071,8 +1104,8 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
     for (const score of analysis.scores || []) {
       const card = findCard(cardMap, score.name);
       const cmc = String(Math.floor(card?.cmc ?? 0));
-      const colorKey = getManaColorBucket(card);
-      buckets[cmc][colorKey] += 1;
+      const colorKeys = getManaColorKeys(card);
+      for (const colorKey of colorKeys) buckets[cmc][colorKey] += 1;
       buckets[cmc].total += 1;
     }
     return Object.values(buckets);
@@ -1086,7 +1119,8 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
             <div>
               <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">Commander Analysis</div>
               <h2 className="mt-1 text-xl font-bold leading-tight text-neutral-50 sm:text-2xl">{names(deck.commanders)}</h2>
-              {deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
+              {deck.hasValidPartner && deck.commanders[1] && <div className="mt-1 text-sm text-neutral-400">Partner: {deck.commanders[1].name}</div>}
+              {deck.hasValidCompanion && deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
               {coreCards.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {coreCards.map((card) => (
@@ -1156,6 +1190,7 @@ export default function App() {
   const [notFound, setNotFound] = useState([]);
   const [analysisSettings, setAnalysisSettings] = useState(DEFAULT_ANALYSIS_SETTINGS);
   const [coreCards, setCoreCards] = useState([]);
+  const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState(null);
@@ -1212,6 +1247,7 @@ export default function App() {
         sideboard ? `Sideboard:\n${sideboard}` : "",
         considering ? `Considering:\n${considering}` : "",
       ].filter(Boolean).join("\n\n"));
+      setSidePanelOpen(false);
     } catch (importError) {
       setError(importError.message);
     } finally {
@@ -1259,7 +1295,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[380px_minmax(0,1fr)]">
+    <div className={`min-h-screen bg-neutral-950 text-neutral-100 ${sidePanelOpen ? "lg:grid lg:grid-cols-[380px_minmax(0,1fr)]" : ""}`}>
+      <button
+        type="button"
+        onClick={() => setSidePanelOpen((open) => !open)}
+        className="fixed left-2 top-2 z-40 min-h-10 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-neutral-100 shadow-lg hover:border-amber-500"
+      >
+        {sidePanelOpen ? "Close import" : "Open import"}
+      </button>
       <InputPanel
         cmdInput={cmdInput}
         companionInput={companionInput}
@@ -1270,6 +1313,7 @@ export default function App() {
         draftDeck={draftDeck}
         loading={loading}
         progress={progress}
+        sidePanelOpen={sidePanelOpen}
         onAnalyze={runAnalysis}
         onImport={handleMoxfieldImport}
         setCmdInput={setCmdInput}

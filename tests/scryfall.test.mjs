@@ -32,14 +32,15 @@ test("retries unresolved split cards with normalized named lookups", async () =>
   };
 
   try {
-    const result = await fetchScryfall(["Spiked Corridor/Torture Pit"]);
+    const progress = [];
+    const result = await fetchScryfall(["Spiked Corridor/Torture Pit"], (message) => progress.push(message));
 
     assert.equal(result.notFound.length, 0);
     assert.equal(result.results["Spiked Corridor/Torture Pit"].name, "Spiked Corridor // Torture Pit");
     assert.equal(result.results["Spiked Corridor // Torture Pit"].name, "Spiked Corridor // Torture Pit");
     assert.ok(calls.some((call) => call.url.includes("/cards/named")));
+    assert.equal(progress.some((message) => message.includes("Retrying unresolved card")), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
-

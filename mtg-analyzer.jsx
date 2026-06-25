@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatManaSymbols, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
@@ -43,6 +43,11 @@ const ROLE_FILTERS = [
   { id: "gameChanger", label: "Game Changers" },
   { id: "core", label: "Core" },
 ];
+
+function extractMoxfieldDeckUrl(value = "") {
+  const match = String(value).trim().match(/https?:\/\/(?:www\.)?moxfield\.com\/decks\/[a-zA-Z0-9_-]+(?:[^\s)"'<>]*)?/i);
+  return match?.[0] || "";
+}
 
 function names(entries = []) {
   return entries.map((entry) => entry.name).join(" + ") || "None";
@@ -220,6 +225,8 @@ function InputControls({
   progress,
   onAnalyze,
   onImport,
+  onDeckPaste,
+  onMoxfieldPaste,
   setCmdInput,
   setCompanionInput,
   setDeckInput,
@@ -243,10 +250,11 @@ function InputControls({
           <input
             value={moxfieldUrl}
             onChange={(event) => setMoxfieldUrl(event.target.value)}
+            onPaste={onMoxfieldPaste}
             placeholder="Moxfield URL"
             className="min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
           />
-          <button type="button" onClick={onImport} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100 hover:border-amber-500">
+          <button type="button" onClick={onImport} disabled={loading} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100 hover:border-amber-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-500">
             Import
           </button>
         </div>
@@ -277,6 +285,7 @@ function InputControls({
           <textarea
             value={deckInput}
             onChange={(event) => setDeckInput(event.target.value)}
+            onPaste={onDeckPaste}
             placeholder={"1 Sol Ring\n1 Arcane Signet\n1 Windfall\n\n1 Kykar, Wind's Fury"}
             className="mt-1 min-h-[280px] w-full resize-y rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3 font-mono text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:min-h-[360px] sm:text-sm"
             spellCheck={false}
@@ -334,7 +343,20 @@ function InputPanel(props) {
   );
 }
 
-function EmptyWorkspace({ draftDeck }) {
+function EmptyWorkspace({ draftDeck, sidePanelOpen }) {
+  if (!sidePanelOpen) {
+    return (
+      <main className="p-3 sm:p-5 lg:p-8">
+        <div className="mx-auto max-w-6xl">
+          <div className={panelClass("p-5")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Import closed</div>
+            <h2 className="mt-2 text-2xl font-semibold text-neutral-50">Open import & review to confirm deck identity and analyze.</h2>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="p-3 sm:p-5 lg:p-8">
       <div className="mx-auto max-w-6xl">
@@ -1075,6 +1097,27 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
   );
 }
 
+function TabButton({ tab, activeTab, setActiveTab, mobile = false }) {
+  return (
+    <button
+      key={tab.id}
+      type="button"
+      onClick={() => setActiveTab(tab.id)}
+      className={`${mobile ? "min-h-12 min-w-[96px] px-3 py-2 text-xs" : "min-h-10 px-3 py-2 text-sm"} shrink-0 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+    >
+      {tab.label}
+    </button>
+  );
+}
+
+function MobileTabBar({ activeTab, setActiveTab }) {
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
+      {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} mobile />)}
+    </nav>
+  );
+}
+
 function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
@@ -1113,7 +1156,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
   }, [analysis.structure?.manaCurve, analysis.scores, cardMap]);
 
   return (
-    <main className="min-w-0 p-3 sm:p-5 lg:p-8">
+    <main className="min-w-0 p-3 pb-24 sm:p-5 sm:pb-24 md:pb-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
         <header className="space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -1152,16 +1195,9 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
           )}
         </header>
 
-        <nav className="sticky top-0 z-20 -mx-3 flex gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+        <nav className="sticky top-0 z-20 -mx-3 hidden gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:flex lg:-mx-8 lg:px-8">
           {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
-            >
-              {tab.label}
-            </button>
+            <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />
           ))}
         </nav>
 
@@ -1187,6 +1223,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
         {activeTab === "upgrades" && <UpgradesTab analysis={analysis} />}
         {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
       </div>
+      <MobileTabBar activeTab={activeTab} setActiveTab={setActiveTab} />
     </main>
   );
 }
@@ -1207,6 +1244,8 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("scorecard");
+  const lastAutoImportRef = useRef("");
+  const importInFlightRef = useRef("");
 
   const draftDeck = useMemo(() => {
     if (!deckInput.trim()) return null;
@@ -1229,14 +1268,17 @@ export default function App() {
     });
   };
 
-  async function handleMoxfieldImport() {
-    if (!moxfieldUrl.trim()) return;
+  const importMoxfieldUrl = useCallback(async (inputUrl, options = {}) => {
+    const targetUrl = String(inputUrl || "").trim();
+    if (!targetUrl || importInFlightRef.current === targetUrl) return;
+    importInFlightRef.current = targetUrl;
     setLoading(true);
     setError(null);
+    setMoxfieldUrl(targetUrl);
     try {
-      setProgress("Fetching deck...");
+      setProgress(options.auto ? "Importing Moxfield deck..." : "Fetching deck...");
 
-      const res = await fetch(`/api/import/moxfield?url=${encodeURIComponent(moxfieldUrl.trim())}`);
+      const res = await fetch(`/api/import/moxfield?url=${encodeURIComponent(targetUrl)}`);
       const data = await res.json();
       if (!res.ok || data.error) {
         const detail = data.details?.length ? ` ${data.details.join(" ")}` : "";
@@ -1251,10 +1293,41 @@ export default function App() {
     } catch (importError) {
       setError(importError.message);
     } finally {
+      importInFlightRef.current = "";
       setLoading(false);
       setProgress("");
     }
-  }
+  }, []);
+
+  const handleMoxfieldImport = useCallback(() => {
+    return importMoxfieldUrl(moxfieldUrl);
+  }, [importMoxfieldUrl, moxfieldUrl]);
+
+  const handleMoxfieldPaste = useCallback((event) => {
+    const url = extractMoxfieldDeckUrl(event.clipboardData?.getData("text") || "");
+    if (!url) return;
+    event.preventDefault();
+    lastAutoImportRef.current = url;
+    importMoxfieldUrl(url, { auto: true });
+  }, [importMoxfieldUrl]);
+
+  const handleDeckPaste = useCallback((event) => {
+    const url = extractMoxfieldDeckUrl(event.clipboardData?.getData("text") || "");
+    if (!url) return;
+    event.preventDefault();
+    lastAutoImportRef.current = url;
+    importMoxfieldUrl(url, { auto: true });
+  }, [importMoxfieldUrl]);
+
+  useEffect(() => {
+    const url = extractMoxfieldDeckUrl(moxfieldUrl);
+    if (!url || url !== moxfieldUrl.trim() || loading || lastAutoImportRef.current === url) return undefined;
+    const timer = window.setTimeout(() => {
+      lastAutoImportRef.current = url;
+      importMoxfieldUrl(url, { auto: true });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [importMoxfieldUrl, loading, moxfieldUrl]);
 
   async function runAnalysis() {
     if (!deckInput.trim()) {
@@ -1301,7 +1374,7 @@ export default function App() {
         onClick={() => setSidePanelOpen((open) => !open)}
         className="fixed left-2 top-2 z-40 min-h-10 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-neutral-100 shadow-lg hover:border-amber-500"
       >
-        {sidePanelOpen ? "Close import" : "Open import"}
+        {sidePanelOpen ? "Close import & review" : "Open import & review"}
       </button>
       <InputPanel
         cmdInput={cmdInput}
@@ -1316,6 +1389,8 @@ export default function App() {
         sidePanelOpen={sidePanelOpen}
         onAnalyze={runAnalysis}
         onImport={handleMoxfieldImport}
+        onDeckPaste={handleDeckPaste}
+        onMoxfieldPaste={handleMoxfieldPaste}
         setCmdInput={setCmdInput}
         setCompanionInput={setCompanionInput}
         setDeckInput={setDeckInput}
@@ -1323,7 +1398,7 @@ export default function App() {
       />
       {analysis && deckModel
         ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
-        : <EmptyWorkspace draftDeck={draftDeck} />}
+        : <EmptyWorkspace draftDeck={draftDeck} sidePanelOpen={sidePanelOpen} />}
     </div>
   );
 }

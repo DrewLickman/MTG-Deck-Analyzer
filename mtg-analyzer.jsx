@@ -250,6 +250,7 @@ function InputControls({
             Import
           </button>
         </div>
+        <div className="-mt-1 text-xs text-neutral-500">Falls back through Decklist.gg when Moxfield blocks direct import.</div>
 
         <label className="block">
           <span className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Override</span>
@@ -1233,7 +1234,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      setProgress("Fetching Moxfield deck...");
+      setProgress("Fetching deck...");
 
       const res = await fetch(`/api/import/moxfield?url=${encodeURIComponent(moxfieldUrl.trim())}`);
       const data = await res.json();

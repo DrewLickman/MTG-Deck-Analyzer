@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fetchDecklistGgDeck, moxfieldDeckUrl, normalizeDecklistGgDeck } from "../../../../lib/decklistgg.mjs";
 import { extractMoxfieldId, normalizeMoxfieldDeck } from "../../../../lib/moxfield.mjs";
 
 const MOXFIELD_ENDPOINTS = [
@@ -59,12 +60,36 @@ export async function GET(request) {
     if (!normalized.deckText.trim()) {
       return NextResponse.json({ error: "Moxfield returned a deck, but no mainboard cards were found." }, { status: 422 });
     }
-    return NextResponse.json({ id, ...normalized });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error.message, details: error.details || [] },
-      { status: error.status || 500 },
-    );
+    return NextResponse.json({ id, source: "moxfield", ...normalized });
+  } catch (moxfieldError) {
+    try {
+      const data = await fetchDecklistGgDeck(moxfieldDeckUrl(id));
+      const normalized = normalizeDecklistGgDeck(data);
+      if (!normalized.deckText.trim()) {
+        return NextResponse.json(
+          {
+            error: "Decklist.gg returned a deck, but no mainboard cards were found.",
+            details: moxfieldError.details || [],
+          },
+          { status: 422 },
+        );
+      }
+      return NextResponse.json({
+        id,
+        source: "decklist.gg",
+        importWarnings: [moxfieldError.message],
+        ...normalized,
+      });
+    } catch (decklistError) {
+      const details = [
+        ...(moxfieldError.details || []),
+        ...(decklistError.details || []),
+      ];
+      const message = `${moxfieldError.message} Decklist.gg fallback also failed: ${decklistError.message}`;
+      return NextResponse.json(
+        { error: message, details },
+        { status: decklistError.status || moxfieldError.status || 500 },
+      );
+    }
   }
 }
-

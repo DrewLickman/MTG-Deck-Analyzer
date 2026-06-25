@@ -2,12 +2,13 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { COLOR_HEX, COLOR_LABEL, ROLE_LABELS, findCard, getCardText, getRoleKeys } from "./lib/cardUtils.mjs";
-import { buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis } from "./lib/deckAnalysis.mjs";
+import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, getCardText, getManaColorBucket, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
+import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { fetchScryfall } from "./lib/scryfall.mjs";
 
 const TABS = [
+  { id: "scorecard", label: "Scorecard" },
   { id: "overview", label: "Overview" },
   { id: "structure", label: "Structure" },
   { id: "power", label: "Power" },
@@ -24,12 +25,23 @@ const ROLE_FILTERS = [
   { id: "removal", label: "Removal" },
   { id: "boardWipe", label: "Wipes" },
   { id: "tutor", label: "Tutors" },
+  { id: "cardSelection", label: "Selection" },
   { id: "protection", label: "Protection" },
   { id: "recursion", label: "Recursion" },
   { id: "engine", label: "Engines" },
   { id: "payoff", label: "Payoffs" },
   { id: "finisher", label: "Finishers" },
+  { id: "tokenMaker", label: "Tokens" },
+  { id: "sacrificeOutlet", label: "Sac Outlets" },
+  { id: "graveyardHate", label: "Grave Hate" },
+  { id: "stax", label: "Stax" },
+  { id: "costReducer", label: "Reducers" },
+  { id: "manaFixing", label: "Fixing" },
+  { id: "haste", label: "Haste" },
+  { id: "evasion", label: "Evasion" },
+  { id: "lifeGain", label: "Lifegain" },
   { id: "gameChanger", label: "Game Changers" },
+  { id: "core", label: "Core" },
 ];
 
 function names(entries = []) {
@@ -75,6 +87,17 @@ function RoleChip({ role }) {
   );
 }
 
+function ColorBadge({ card, compact = false }) {
+  const bucket = getManaColorBucket(card);
+  const label = COLOR_LABEL[bucket] || bucket;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-[11px] text-neutral-300">
+      <span className="h-2.5 w-2.5 rounded-full border border-neutral-700" style={{ background: COLOR_HEX[bucket] || COLOR_HEX.C }} />
+      {!compact && <span>{label}</span>}
+    </span>
+  );
+}
+
 function StatusLine({ ok, children }) {
   return (
     <div className={`rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-900 bg-emerald-950/30 text-emerald-200" : "border-amber-900 bg-amber-950/30 text-amber-200"}`}>
@@ -88,6 +111,16 @@ function statusClasses(status) {
   if (status === "bad" || status === "critical") return "border-rose-900 bg-rose-950/35 text-rose-200";
   if (status === "warning" || status === "warn") return "border-amber-900 bg-amber-950/35 text-amber-200";
   return "border-neutral-800 bg-neutral-950 text-neutral-300";
+}
+
+function toneForScore(score) {
+  if (score >= 70) return "good";
+  if (score >= 50) return "warn";
+  return "bad";
+}
+
+function settingValue(settings, key) {
+  return settings?.[key] ?? DEFAULT_ANALYSIS_SETTINGS[key];
 }
 
 function FindingCard({ finding }) {
@@ -321,17 +354,155 @@ function EmptyWorkspace({ draftDeck }) {
 function SummaryStrip({ analysis, deck }) {
   const bracket = analysis.bracket;
   const urgentFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity === "critical" || finding.severity === "warning").length;
+  const score = (key) => analysis.scorecard?.find((item) => item.key === key);
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 xl:grid-cols-9">
+      <Metric label="Overall" value={analysis.overallScore ?? "-"} sub="Score" tone={toneForScore(analysis.overallScore || 0)} />
       <Metric label="Bracket" value={bracket?.rangeLabel || "-"} sub={bracket?.label} tone={bracket?.bracket >= 4 ? "bad" : bracket?.bracket === 3 ? "warn" : "good"} />
-      <Metric label="Main" value={`${analysis.stats?.cardCount}/${deck.expectedMainCount}`} tone={analysis.stats?.cardCount === deck.expectedMainCount ? "good" : "warn"} />
       <Metric label="Lands" value={analysis.stats?.landCount} tone={analysis.stats?.landCount >= 36 && analysis.stats?.landCount <= 40 ? "good" : "warn"} />
       <Metric label="Ramp" value={analysis.stats?.rampCount} tone={analysis.stats?.rampCount >= 8 ? "good" : "bad"} />
       <Metric label="Flow" value={analysis.structure?.cardFlowProfile?.total ?? "-"} tone={analysis.structure?.cardFlowProfile?.status === "good" ? "good" : analysis.structure?.cardFlowProfile?.status === "bad" ? "bad" : "warn"} />
       <Metric label="Removal" value={analysis.stats?.removalCount} tone={analysis.stats?.removalCount >= 3 ? "good" : "warn"} />
-      <Metric label="Wipes" value={analysis.stats?.boardWipeCount} tone={analysis.stats?.boardWipeCount >= 2 ? "good" : "warn"} />
-      <Metric label="Avg MV" value={analysis.stats?.avgCmc} tone={analysis.stats?.avgCmc <= 3.2 ? "good" : "warn"} />
+      <Metric label="Core Syn" value={score("synergy")?.score ?? "-"} tone={toneForScore(score("synergy")?.score || 0)} />
+      <Metric label="Win Plan" value={score("winPlan")?.score ?? "-"} tone={toneForScore(score("winPlan")?.score || 0)} />
       <Metric label="Findings" value={urgentFindings} tone={urgentFindings ? "warn" : "good"} sub="Urgent" />
+    </div>
+  );
+}
+
+const SETTING_GROUPS = [
+  { key: "landsMin", label: "Min Lands", min: 30, max: 44, step: 1 },
+  { key: "landsMax", label: "Max Lands", min: 32, max: 46, step: 1 },
+  { key: "rampTarget", label: "Ramp", min: 4, max: 18, step: 1 },
+  { key: "drawTarget", label: "Card Flow", min: 4, max: 18, step: 1 },
+  { key: "removalTarget", label: "Removal", min: 0, max: 12, step: 1 },
+  { key: "wipesTarget", label: "Wipes", min: 0, max: 6, step: 1 },
+  { key: "resilienceTarget", label: "Resilience", min: 0, max: 12, step: 1 },
+  { key: "avgManaValueTarget", label: "Avg MV", min: 2.0, max: 5.0, step: 0.1 },
+  { key: "expectedWinTurnTarget", label: "Win Turn", min: 4, max: 12, step: 1 },
+  { key: "tutorSensitivity", label: "Tutors", min: 0, max: 8, step: 1 },
+  { key: "fastManaSensitivity", label: "Fast Mana", min: 0, max: 8, step: 1 },
+  { key: "gameChangerSensitivity", label: "Game Changers", min: 0, max: 8, step: 1 },
+  { key: "synergySensitivity", label: "Core Support", min: 1, max: 20, step: 1 },
+];
+
+function SettingsPanel({ settings, setSettings }) {
+  const resolved = resolveAnalysisSettings(settings);
+
+  const updateSetting = (key, value) => {
+    setSettings((current) => resolveAnalysisSettings({ ...current, [key]: value }));
+  };
+
+  return (
+    <section className={panelClass("p-4 sm:p-5")}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Analysis Settings</div>
+          <div className="mt-1 text-sm text-neutral-400">Adjust the targets used by the local scorecard.</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSettings(DEFAULT_ANALYSIS_SETTINGS)}
+          className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200"
+        >
+          Reset
+        </button>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {SETTING_GROUPS.map((setting) => (
+          <label key={setting.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs uppercase tracking-wide text-neutral-500">{setting.label}</span>
+              <span className="font-mono text-sm text-neutral-100">{settingValue(resolved, setting.key)}</span>
+            </div>
+            <input
+              type="range"
+              min={setting.min}
+              max={setting.max}
+              step={setting.step}
+              value={settingValue(resolved, setting.key)}
+              onChange={(event) => updateSetting(setting.key, Number(event.target.value))}
+              className="mt-3 w-full accent-amber-500"
+            />
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScorecardPanel({ item }) {
+  return (
+    <article className={`rounded-lg border p-4 ${statusClasses(item.status)}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">{item.label}</div>
+          <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{item.grade}</div>
+        </div>
+        <div className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-lg text-neutral-100">{item.score}</div>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-neutral-300">{item.summary}</p>
+      <div className="mt-3">
+        <div className="text-xs uppercase tracking-wide text-neutral-500">Evidence</div>
+        <ul className="mt-2 space-y-1 text-sm text-neutral-300">
+          {item.evidence.slice(0, 4).map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      </div>
+      <div className="mt-3">
+        <div className="text-xs uppercase tracking-wide text-neutral-500">Adjustment</div>
+        <div className="mt-1 text-sm text-neutral-300">{item.adjustments[0] || "No immediate adjustment."}</div>
+      </div>
+      {item.highlightCards.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {item.highlightCards.slice(0, 6).map((card) => (
+            <span key={card} className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-300">{card}</span>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ScorecardTab({ analysis, settings, setSettings }) {
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      <section className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Overall Score</div>
+          <div className="mt-2 text-5xl font-bold text-neutral-50">{analysis.overallScore ?? "-"}</div>
+          <div className="mt-3 text-sm text-neutral-400">Local score based on your current slider targets, commander, and core identity cards.</div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
+            <div className="mt-3 space-y-2">
+              {(analysis.highlights?.needsAttention || []).map((item) => (
+                <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <span className="text-sm text-neutral-200">{item.label}</span>
+                  <span className={`font-mono text-sm ${scoreColor(Math.round((item.score - 50) / 10))}`}>{item.score}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strengths</div>
+            <div className="mt-3 space-y-2">
+              {(analysis.highlights?.strengths || []).map((item) => (
+                <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <span className="text-sm text-neutral-200">{item.label}</span>
+                  <span className="font-mono text-sm text-emerald-300">{item.score}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <SettingsPanel settings={settings} setSettings={setSettings} />
+
+      <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
+        {(analysis.scorecard || []).map((item) => <ScorecardPanel key={item.key} item={item} />)}
+      </section>
     </div>
   );
 }
@@ -590,10 +761,23 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
             <BarChart data={cmcBuckets} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
               <XAxis dataKey="cmc" tick={{ fill: "#a3a3a3", fontSize: 12 }} />
               <YAxis tick={{ fill: "#a3a3a3", fontSize: 12 }} />
-              <Tooltip contentStyle={{ background: "#171717", border: "1px solid #404040", borderRadius: 8 }} />
-              <Bar dataKey="count" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              <Tooltip
+                contentStyle={{ background: "#171717", border: "1px solid #404040", borderRadius: 8 }}
+                formatter={(value, key) => [value, COLOR_LABEL[key] || key]}
+              />
+              {MANA_CURVE_COLOR_ORDER.map((colorKey) => (
+                <Bar key={colorKey} dataKey={colorKey} stackId="mana" fill={COLOR_HEX[colorKey]} radius={colorKey === "C" ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+              ))}
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {MANA_CURVE_COLOR_ORDER.map((colorKey) => (
+            <span key={colorKey} className="inline-flex items-center gap-1.5 text-xs text-neutral-400">
+              <span className="h-2.5 w-2.5 rounded-full border border-neutral-700" style={{ background: COLOR_HEX[colorKey] }} />
+              {COLOR_LABEL[colorKey]}
+            </span>
+          ))}
         </div>
       </section>
 
@@ -617,8 +801,10 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
   );
 }
 
-function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir }) {
-  const [expanded, setExpanded] = useState(null);
+function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir }) {
+  const [expanded, setExpanded] = useState([]);
+  const coreSet = useMemo(() => new Set((coreCards || []).map(normalizeName)), [coreCards]);
+  const expandedSet = useMemo(() => new Set(expanded), [expanded]);
   const rows = useMemo(() => {
     const filtered = analysis.scores.filter((score) => roleFilter === "all" || score.roles?.includes(roleFilter));
     return [...filtered].sort((a, b) => {
@@ -636,6 +822,10 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
     }
   };
 
+  const toggleExpanded = (name) => {
+    setExpanded((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
+  };
+
   return (
     <section className={panelClass("overflow-hidden")}>
       <div className="flex flex-col gap-3 border-b border-neutral-800 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -643,17 +833,27 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card Scores</div>
           <div className="text-sm text-neutral-400">{rows.length} visible cards</div>
         </div>
-        <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
-          {ROLE_FILTERS.map((filter) => (
-            <button
-              type="button"
-              key={filter.id}
-              onClick={() => setRoleFilter(filter.id)}
-              className={`min-h-9 shrink-0 rounded border px-2 py-1 text-xs ${roleFilter === filter.id ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
-            >
-              {filter.label}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setExpanded(rows.map((row) => row.name))} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
+              Expand all
             </button>
-          ))}
+            <button type="button" onClick={() => setExpanded([])} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
+              Compact all
+            </button>
+          </div>
+          <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
+            {ROLE_FILTERS.map((filter) => (
+              <button
+                type="button"
+                key={filter.id}
+                onClick={() => setRoleFilter(filter.id)}
+                className={`min-h-9 shrink-0 rounded border px-2 py-1 text-xs ${roleFilter === filter.id ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -661,13 +861,17 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
         {rows.map((score) => {
           const card = findCard(cardMap, score.name);
           const roles = score.roles?.length ? score.roles : getRoleKeys(card);
-          const isExpanded = expanded === score.name;
+          const isExpanded = expandedSet.has(score.name);
+          const isCore = coreSet.has(normalizeName(score.name));
           return (
-            <article key={score.name} className="bg-neutral-900/70 p-3">
-              <button type="button" onClick={() => setExpanded(isExpanded ? null : score.name)} className="block w-full text-left">
+            <article key={score.name} onClick={() => toggleExpanded(score.name)} className="cursor-pointer bg-neutral-900/70 p-3">
+              <div className="block w-full text-left">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium leading-snug text-neutral-100">{score.name}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-medium leading-snug text-neutral-100">{score.name}</div>
+                      <ColorBadge card={card} compact />
+                    </div>
                     <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {score.note || "No special signal"}</div>
                   </div>
                   <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${scoreColor(score.score)}`}>
@@ -677,6 +881,16 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
                 <div className="mt-3 flex flex-wrap gap-1">
                   {roles.map((role) => <RoleChip key={role} role={role} />)}
                 </div>
+              </div>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleCoreCard(score.name);
+                }}
+                className={`mt-3 min-h-9 w-full rounded border px-3 py-2 text-xs font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500 hover:text-amber-200"}`}
+              >
+                {isCore ? "Core identity" : "Mark as core"}
               </button>
               {isExpanded && (
                 <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
@@ -711,16 +925,30 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
             {rows.map((score) => {
               const card = findCard(cardMap, score.name);
               const roles = score.roles?.length ? score.roles : getRoleKeys(card);
-              const isExpanded = expanded === score.name;
+              const isExpanded = expandedSet.has(score.name);
+              const isCore = coreSet.has(normalizeName(score.name));
               return (
                 <Fragment key={score.name}>
-                  <tr className="border-t border-neutral-800 bg-neutral-900/70">
-                    <td className="px-4 py-3">
-                      <button type="button" onClick={() => setExpanded(isExpanded ? null : score.name)} className="h-7 w-7 rounded border border-neutral-700 text-neutral-300 hover:border-amber-500">
-                        {isExpanded ? "-" : "+"}
-                      </button>
+                  <tr onClick={() => toggleExpanded(score.name)} className="cursor-pointer border-t border-neutral-800 bg-neutral-900/70 hover:bg-neutral-900">
+                    <td className="px-4 py-3 text-neutral-500">
+                      {isExpanded ? "-" : "+"}
                     </td>
-                    <td className="px-4 py-3 font-medium text-neutral-100">{score.name}</td>
+                    <td className="px-4 py-3 font-medium text-neutral-100">
+                      <div className="flex items-center gap-2">
+                        <span>{score.name}</span>
+                        <ColorBadge card={card} compact />
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleCoreCard(score.name);
+                          }}
+                          className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-400 hover:border-amber-500 hover:text-amber-200"}`}
+                        >
+                          {isCore ? "Core" : "Set core"}
+                        </button>
+                      </div>
+                    </td>
                     <td className={`px-4 py-3 font-mono ${scoreColor(score.score)}`}>{score.score > 0 ? "+" : ""}{score.score}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -807,13 +1035,13 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
     <section className={panelClass("p-4 sm:p-5")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Debug</div>
       <pre className="mt-3 max-h-[640px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">
-        {JSON.stringify({ deck, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
+        {JSON.stringify({ deck, scorecard: analysis.scorecard, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
       </pre>
     </section>
   );
 }
 
-function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab }) {
+function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -832,13 +1060,23 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
   }, [analysis.colorPips]);
 
   const cmcBuckets = useMemo(() => {
+    if (analysis.structure?.manaCurve?.length) return analysis.structure.manaCurve;
     const cardCmcs = (analysis.scores || []).map((score) => Math.floor(findCard(cardMap, score.name)?.cmc ?? 0));
     const maxCmc = Math.max(0, ...cardCmcs);
     const buckets = {};
-    for (let i = 0; i <= maxCmc; i++) buckets[String(i)] = 0;
-    for (const cmc of cardCmcs) buckets[String(cmc)]++;
-    return Object.entries(buckets).map(([cmc, count]) => ({ cmc, count }));
-  }, [analysis.scores, cardMap]);
+    for (let i = 0; i <= maxCmc; i++) {
+      buckets[String(i)] = { cmc: String(i), total: 0 };
+      for (const colorKey of MANA_CURVE_COLOR_ORDER) buckets[String(i)][colorKey] = 0;
+    }
+    for (const score of analysis.scores || []) {
+      const card = findCard(cardMap, score.name);
+      const cmc = String(Math.floor(card?.cmc ?? 0));
+      const colorKey = getManaColorBucket(card);
+      buckets[cmc][colorKey] += 1;
+      buckets[cmc].total += 1;
+    }
+    return Object.values(buckets);
+  }, [analysis.structure?.manaCurve, analysis.scores, cardMap]);
 
   return (
     <main className="min-w-0 p-3 sm:p-5 lg:p-8">
@@ -849,6 +1087,20 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
               <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">Commander Analysis</div>
               <h2 className="mt-1 text-xl font-bold leading-tight text-neutral-50 sm:text-2xl">{names(deck.commanders)}</h2>
               {deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
+              {coreCards.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {coreCards.map((card) => (
+                    <button
+                      key={card}
+                      type="button"
+                      onClick={() => toggleCoreCard(card)}
+                      className="rounded border border-amber-700 bg-amber-950/40 px-2 py-1 text-xs text-amber-200 hover:border-amber-400"
+                    >
+                      Core: {card}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <SummaryStrip analysis={analysis} deck={deck} />
@@ -867,6 +1119,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
           ))}
         </nav>
 
+        {activeTab === "scorecard" && <ScorecardTab analysis={analysis} settings={analysisSettings} setSettings={setAnalysisSettings} />}
         {activeTab === "overview" && <OverviewTab analysis={analysis} deck={deck} />}
         {activeTab === "structure" && <StructureTab analysis={analysis} />}
         {activeTab === "power" && <PowerTab analysis={analysis} />}
@@ -875,6 +1128,8 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
           <CardsTab
             analysis={analysis}
             cardMap={cardMap}
+            coreCards={coreCards}
+            toggleCoreCard={toggleCoreCard}
             roleFilter={roleFilter}
             setRoleFilter={setRoleFilter}
             sortCol={sortCol}
@@ -895,19 +1150,37 @@ export default function App() {
   const [companionInput, setCompanionInput] = useState("");
   const [deckInput, setDeckInput] = useState("");
   const [moxfieldUrl, setMoxfieldUrl] = useState("");
-  const [analysis, setAnalysis] = useState(null);
+  const [remoteAnalysis, setRemoteAnalysis] = useState(null);
   const [deckModel, setDeckModel] = useState(null);
   const [cardMap, setCardMap] = useState({});
   const [notFound, setNotFound] = useState([]);
+  const [analysisSettings, setAnalysisSettings] = useState(DEFAULT_ANALYSIS_SETTINGS);
+  const [coreCards, setCoreCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("scorecard");
 
   const draftDeck = useMemo(() => {
     if (!deckInput.trim()) return null;
     return parseDecklist(deckInput, { commanderInput: cmdInput, companionInput });
   }, [deckInput, cmdInput, companionInput]);
+
+  const analysis = useMemo(() => {
+    if (!deckModel || !Object.keys(cardMap).length) return null;
+    const localAnalysis = buildLocalAnalysis(deckModel, cardMap, { analysisSettings, coreCards });
+    return mergeAnalysis(remoteAnalysis, localAnalysis);
+  }, [deckModel, cardMap, remoteAnalysis, analysisSettings, coreCards]);
+
+  const toggleCoreCard = (name) => {
+    setCoreCards((current) => {
+      const normalized = normalizeName(name);
+      if (current.some((card) => normalizeName(card) === normalized)) {
+        return current.filter((card) => normalizeName(card) !== normalized);
+      }
+      return [...current, name];
+    });
+  };
 
   async function handleMoxfieldImport() {
     if (!moxfieldUrl.trim()) return;
@@ -955,7 +1228,8 @@ export default function App() {
 
     setLoading(true);
     setError(null);
-    setAnalysis(null);
+    setRemoteAnalysis(null);
+    setDeckModel(null);
     setNotFound([]);
 
     try {
@@ -970,14 +1244,12 @@ export default function App() {
       setCardMap(scryfall.results);
       setNotFound(scryfall.notFound);
       setDeckModel(validatedDeck);
+      setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
 
       setProgress(`Running deck analysis for ${validatedDeck.cardCount} main-deck cards...`);
-      const localAnalysis = buildLocalAnalysis(validatedDeck, scryfall.results);
       const remoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
-      const mergedAnalysis = mergeAnalysis(remoteAnalysis, localAnalysis);
-
-      setAnalysis(mergedAnalysis);
-      setActiveTab("overview");
+      setRemoteAnalysis(remoteAnalysis);
+      setActiveTab("scorecard");
     } catch (analysisError) {
       setError(analysisError.message);
     } finally {
@@ -1006,7 +1278,7 @@ export default function App() {
         setMoxfieldUrl={setMoxfieldUrl}
       />
       {analysis && deckModel
-        ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} activeTab={activeTab} setActiveTab={setActiveTab} />
+        ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
         : <EmptyWorkspace draftDeck={draftDeck} />}
     </div>
   );

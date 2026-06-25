@@ -32,6 +32,14 @@ test("Game Changer count raises the bracket floor", () => {
   assert.ok(result.bracket >= 4);
 });
 
+test("updated unban Game Changers are counted", () => {
+  const deck = deckWith(["Gifts Ungiven", "Braids, Cabal Minion", "Coalition Victory", "Panoptic Mirror"]);
+  const result = analyzeBracket(deck, {}, { avgCmc: 3, rampCount: 8, removalCount: 4 });
+
+  assert.deepEqual(result.gameChangers, ["Gifts Ungiven", "Braids, Cabal Minion", "Coalition Victory", "Panoptic Mirror"]);
+  assert.ok(result.bracket >= 4);
+});
+
 test("compact combo and speed signals produce a higher bracket", () => {
   const deck = deckWith(["Thassa's Oracle", "Demonic Consultation", "Ancient Tomb", "Mana Vault"]);
   const cardMap = {

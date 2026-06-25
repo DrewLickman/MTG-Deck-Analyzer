@@ -46,6 +46,8 @@ Deck:
   assert.ok(analysis.structure.resilienceProfile);
   assert.ok(analysis.structure.winPlan);
   assert.ok(Array.isArray(analysis.priorityFindings));
+  assert.ok(Array.isArray(analysis.scorecard));
+  assert.equal(typeof analysis.overallScore, "number");
 });
 
 test("local analysis identifies engines, payoffs, finishers, and interaction profiles", () => {
@@ -81,4 +83,124 @@ Deck:
   assert.ok(payoffRole.count >= 1);
   assert.ok(analysis.structure.interactionProfile.instantSpeed >= 2);
   assert.ok(analysis.structure.winPlan.engines.includes("Young Pyromancer"));
+});
+
+test("average mana value includes commander and mana curve stacks by color bucket", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Six Mana Commander
+
+Deck:
+36 Island
+10 Black Three
+5 Blue Three
+2 Multicolor Three
+1 Sol Ring
+`);
+  const cardMap = {
+    "Six Mana Commander": card("Six Mana Commander", { cmc: 6, mana_cost: "{4}{U}{R}", type_line: "Legendary Creature", oracle_text: "Flying." }),
+    Island: makeBasicLandCard("Island"),
+    "Black Three": card("Black Three", { cmc: 3, mana_cost: "{2}{B}", type_line: "Creature", oracle_text: "Menace." }),
+    "Blue Three": card("Blue Three", { cmc: 3, mana_cost: "{2}{U}", type_line: "Instant", oracle_text: "Draw a card." }),
+    "Multicolor Three": card("Multicolor Three", { cmc: 3, mana_cost: "{1}{U}{R}", type_line: "Sorcery", oracle_text: "Draw a card." }),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const mvThree = analysis.structure.manaCurve.find((bucket) => bucket.cmc === "3");
+
+  assert.equal(analysis.stats.avgCmc, 3.05);
+  assert.equal(mvThree.B, 10);
+  assert.equal(mvThree.U, 5);
+  assert.equal(mvThree.M, 2);
+  assert.equal(mvThree.total, 17);
+});
+
+test("additional role tags are detected", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Faithless Looting
+1 Rest in Peace
+1 Goblin Bombardment
+1 Fervor
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Faithless Looting": card("Faithless Looting", { cmc: 1, mana_cost: "{R}", type_line: "Sorcery", oracle_text: "Draw two cards, then discard two cards. Flashback." }),
+    "Rest in Peace": card("Rest in Peace", { cmc: 2, mana_cost: "{1}{W}", type_line: "Enchantment", oracle_text: "When Rest in Peace enters, exile all graveyards. Cards in graveyards can't move." }),
+    "Goblin Bombardment": card("Goblin Bombardment", { cmc: 2, mana_cost: "{1}{R}", type_line: "Enchantment", oracle_text: "Sacrifice a creature: Goblin Bombardment deals 1 damage to any target." }),
+    Fervor: card("Fervor", { cmc: 3, mana_cost: "{2}{R}", type_line: "Enchantment", oracle_text: "Creatures you control have haste." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const byName = Object.fromEntries(analysis.scores.map((score) => [score.name, score.roles]));
+
+  assert.ok(byName["Faithless Looting"].includes("cardSelection"));
+  assert.ok(byName["Rest in Peace"].includes("graveyardHate"));
+  assert.ok(byName["Goblin Bombardment"].includes("sacrificeOutlet"));
+  assert.ok(byName.Fervor.includes("haste"));
+});
+
+test("scorecard responds to adjustable targets", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Sol Ring
+1 Arcane Signet
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", oracle_text: "{T}: Add one mana of any color in your commander's color identity." }),
+  };
+
+  const loose = buildLocalAnalysis(deck, cardMap, { analysisSettings: { rampTarget: 2 } });
+  const strict = buildLocalAnalysis(deck, cardMap, { analysisSettings: { rampTarget: 10 } });
+  const looseRamp = loose.scorecard.find((item) => item.key === "ramp");
+  const strictRamp = strict.scorecard.find((item) => item.key === "ramp");
+
+  assert.ok(looseRamp.score > strictRamp.score);
+});
+
+test("core identity cards are protected from cut suggestions and shape synergy", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Young Pyromancer
+1 Impact Tremors
+1 Sol Ring
+1 Expensive Blank
+
+Sideboard:
+1 Faithless Looting
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Young Pyromancer": card("Young Pyromancer", { cmc: 2, mana_cost: "{1}{R}", type_line: "Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a 1/1 token." }),
+    "Impact Tremors": card("Impact Tremors", { cmc: 2, mana_cost: "{1}{R}", type_line: "Enchantment", oracle_text: "Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent." }),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+    "Expensive Blank": card("Expensive Blank", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Faithless Looting": card("Faithless Looting", { cmc: 1, mana_cost: "{R}", type_line: "Sorcery", oracle_text: "Draw two cards, then discard two cards. Flashback." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap, { coreCards: ["Expensive Blank", "Young Pyromancer"], analysisSettings: { synergySensitivity: 2 } });
+  const coreScore = analysis.scores.find((score) => score.name === "Expensive Blank");
+  const synergy = analysis.scorecard.find((item) => item.key === "synergy");
+
+  assert.equal(coreScore.protected, true);
+  assert.equal(analysis.upgrades.some((upgrade) => upgrade.cut === "Expensive Blank"), false);
+  assert.ok(synergy.highlightCards.includes("Young Pyromancer"));
 });

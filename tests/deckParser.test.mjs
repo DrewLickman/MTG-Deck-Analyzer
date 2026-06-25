@@ -39,6 +39,42 @@ test("infers partner commanders from a two-card separated bottom block", () => {
   assert.equal(deck.commandSource, "bottom-block");
 });
 
+test("infers bottom commander after a separated sideboard block", () => {
+  const deck = parseDecklist(`
+1 Sol Ring
+1 Arcane Signet
+1 Windfall
+
+SIDEBOARD:
+1 Lightning Greaves
+1 Swiftfoot Boots
+
+1 Kykar, Wind's Fury
+`);
+
+  assert.deepEqual(deck.commanderNames, ["Kykar, Wind's Fury"]);
+  assert.equal(deck.commandSource, "bottom-block");
+  assert.equal(deck.sideboard.length, 2);
+  assert.equal(deck.sideboard.some((entry) => entry.name === "Kykar, Wind's Fury"), false);
+});
+
+test("infers partner commanders after sideboard while preserving sideboard entries", () => {
+  const deck = parseDecklist(`
+1 Kodama's Reach
+1 Misty Rainforest
+
+Sideboard
+1 Heroic Intervention
+
+1 Brinelin, the Moon Kraken
+1 Gilanra, Caller of Wirewood
+`);
+
+  assert.deepEqual(deck.commanderNames, ["Brinelin, the Moon Kraken", "Gilanra, Caller of Wirewood"]);
+  assert.equal(deck.expectedMainCount, 98);
+  assert.equal(deck.sideboard[0].name, "Heroic Intervention");
+});
+
 test("falls back to the first card when there is no separated command block", () => {
   const deck = parseDecklist(`
 1 Zinnia, Valley's Voice
@@ -49,6 +85,19 @@ test("falls back to the first card when there is no separated command block", ()
   assert.deepEqual(deck.commanderNames, ["Zinnia, Valley's Voice"]);
   assert.equal(deck.commandSource, "first-card");
   assert.equal(deck.main.some((entry) => entry.name === "Zinnia, Valley's Voice"), false);
+});
+
+test("does not steal the only sideboard block as a commander", () => {
+  const deck = parseDecklist(`
+1 Kykar, Wind's Fury
+1 Sol Ring
+
+Sideboard:
+1 Lightning Greaves
+`);
+
+  assert.deepEqual(deck.commanderNames, ["Kykar, Wind's Fury"]);
+  assert.equal(deck.sideboard[0].name, "Lightning Greaves");
 });
 
 test("explicit commander, companion, sideboard, and considering sections stay separate", () => {
@@ -91,4 +140,16 @@ test("manual commander override wins over inferred identity", () => {
 
   assert.deepEqual(deck.commanderNames, ["Zinnia, Valley's Voice"]);
   assert.equal(deck.commandSource, "manual");
+});
+
+test("parses common quantity and set-code export lines", () => {
+  const deck = parseDecklist(`
+1x Kykar, Wind's Fury (CMM) 311
+* 1 Sol Ring (LTC) 279
+1 Arcane Signet
+`);
+
+  assert.deepEqual(deck.commanderNames, ["Kykar, Wind's Fury"]);
+  assert.equal(deck.main[0].name, "Sol Ring");
+  assert.equal(deck.main[1].name, "Arcane Signet");
 });

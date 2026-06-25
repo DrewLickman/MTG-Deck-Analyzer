@@ -1138,6 +1138,17 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
             </div>
           </div>
           <SummaryStrip analysis={analysis} deck={deck} />
+          {notFound.length > 0 && (
+            <div className="rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100">
+              <div className="font-semibold">Unidentified cards</div>
+              <div className="mt-1 text-amber-200/80">These cards could not be matched after multiple Scryfall lookup attempts:</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {notFound.map((name) => (
+                  <span key={name} className="rounded border border-amber-800 bg-neutral-950/60 px-2 py-1 text-xs">{name}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </header>
 
         <nav className="sticky top-0 z-20 -mx-3 flex gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
@@ -1222,31 +1233,19 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const match = moxfieldUrl.match(/moxfield\.com\/decks\/([a-zA-Z0-9_-]+)/);
-      if (!match) throw new Error("Invalid Moxfield URL.");
       setProgress("Fetching Moxfield deck...");
 
-      const res = await fetch(`https://api2.moxfield.com/v3/decks/all/${match[1]}`);
-      if (!res.ok) throw new Error("Moxfield import failed.");
+      const res = await fetch(`/api/import/moxfield?url=${encodeURIComponent(moxfieldUrl.trim())}`);
       const data = await res.json();
+      if (!res.ok || data.error) {
+        const detail = data.details?.length ? ` ${data.details.join(" ")}` : "";
+        throw new Error(`${data.error || "Moxfield import failed."}${detail}`);
+      }
 
-      const processBoard = (board) => Object.values(board || {})
-        .map((card) => `${card.quantity} ${card.card.name}`)
-        .join("\n");
-      const commanders = Object.values(data.boards?.commanders?.cards || {}).map((card) => card.card.name);
-      const companions = Object.values(data.boards?.companions?.cards || {}).map((card) => card.card.name);
-      const mainboard = processBoard(data.boards?.mainboard?.cards);
-      const sideboard = processBoard(data.boards?.sideboard?.cards);
-      const considering = processBoard(data.boards?.maybeboard?.cards);
+      if (data.commanders?.length) setCmdInput(data.commanders.join(" + "));
+      if (data.companions?.length) setCompanionInput(data.companions[0]);
 
-      if (commanders.length) setCmdInput(commanders.join(" + "));
-      if (companions.length) setCompanionInput(companions[0]);
-
-      setDeckInput([
-        mainboard,
-        sideboard ? `Sideboard:\n${sideboard}` : "",
-        considering ? `Considering:\n${considering}` : "",
-      ].filter(Boolean).join("\n\n"));
+      setDeckInput(data.deckText || "");
       setSidePanelOpen(false);
     } catch (importError) {
       setError(importError.message);

@@ -158,6 +158,20 @@ test("parses common quantity and set-code export lines", () => {
   assert.equal(deck.main[1].name, "Arcane Signet");
 });
 
+test("normalizes split-card slash separators", () => {
+  const compact = parseDecklist(`
+1 Spiked Corridor/Torture Pit
+1 Sol Ring
+`);
+  const spaced = parseDecklist(`
+1 Spiked Corridor / Torture Pit
+1 Sol Ring
+`);
+
+  assert.equal(compact.commanderNames[0], "Spiked Corridor // Torture Pit");
+  assert.equal(spaced.commanderNames[0], "Spiked Corridor // Torture Pit");
+});
+
 test("valid partner and companion flags come from card text", () => {
   const deck = parseDecklist(`
 Commanders:

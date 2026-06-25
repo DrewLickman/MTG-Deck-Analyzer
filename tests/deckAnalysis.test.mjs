@@ -275,6 +275,14 @@ Deck:
 1 Young Pyromancer
 1 Impact Tremors
 1 Token Spell
+1 Token Spell Two
+1 Token Spell Three
+1 Token Spell Four
+1 Token Spell Five
+1 Token Spell Six
+1 Token Spell Seven
+1 Token Spell Eight
+1 Token Spell Nine
 `);
   const cardMap = {
     "Generic Commander": card("Generic Commander", { cmc: 4, mana_cost: "{4}", type_line: "Legendary Creature", oracle_text: "Ward 2." }),
@@ -282,13 +290,24 @@ Deck:
     "Young Pyromancer": card("Young Pyromancer", { cmc: 2, mana_cost: "{1}{R}", type_line: "Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a 1/1 token." }),
     "Impact Tremors": card("Impact Tremors", { cmc: 2, mana_cost: "{1}{R}", type_line: "Enchantment", oracle_text: "Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent." }),
     "Token Spell": card("Token Spell", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Two": card("Token Spell Two", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Three": card("Token Spell Three", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Four": card("Token Spell Four", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Five": card("Token Spell Five", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Six": card("Token Spell Six", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Seven": card("Token Spell Seven", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Eight": card("Token Spell Eight", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Token Spell Nine": card("Token Spell Nine", { cmc: 3, mana_cost: "{2}{R}", type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
   };
 
   const withoutCore = buildLocalAnalysis(deck, cardMap);
   const withCore = buildLocalAnalysis(deck, cardMap, { coreCards: ["Young Pyromancer"] });
   const identityCluster = withCore.synergyClusters.find((cluster) => cluster.name === "Commander/Core Identity");
+  const tokenCluster = withCore.synergyClusters.find((cluster) => cluster.name === "Token Pressure");
 
   assert.equal(withoutCore.synergyClusters.some((cluster) => cluster.name === "Commander/Core Identity"), false);
   assert.ok(identityCluster.cards.includes("Young Pyromancer"));
   assert.ok(identityCluster.cards.includes("Token Spell"));
+  assert.equal(tokenCluster.cards.length, 10);
+  assert.ok(tokenCluster.cards.includes("Token Spell Nine"));
 });

@@ -9,6 +9,7 @@ import { fetchScryfall } from "./lib/scryfall.mjs";
 
 const TABS = [
   { id: "overview", label: "Overview" },
+  { id: "structure", label: "Structure" },
   { id: "power", label: "Power" },
   { id: "mana", label: "Mana" },
   { id: "cards", label: "Cards" },
@@ -23,6 +24,11 @@ const ROLE_FILTERS = [
   { id: "removal", label: "Removal" },
   { id: "boardWipe", label: "Wipes" },
   { id: "tutor", label: "Tutors" },
+  { id: "protection", label: "Protection" },
+  { id: "recursion", label: "Recursion" },
+  { id: "engine", label: "Engines" },
+  { id: "payoff", label: "Payoffs" },
+  { id: "finisher", label: "Finishers" },
   { id: "gameChanger", label: "Game Changers" },
 ];
 
@@ -55,7 +61,7 @@ function Metric({ label, value, tone = "neutral", sub }) {
   return (
     <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-neutral-50">{value ?? "-"}</div>
+      <div className="mt-1 text-lg font-semibold leading-tight text-neutral-50 sm:text-xl">{value ?? "-"}</div>
       {sub && <div className="mt-0.5 text-xs text-neutral-500">{sub}</div>}
     </div>
   );
@@ -73,6 +79,33 @@ function StatusLine({ ok, children }) {
   return (
     <div className={`rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-900 bg-emerald-950/30 text-emerald-200" : "border-amber-900 bg-amber-950/30 text-amber-200"}`}>
       {children}
+    </div>
+  );
+}
+
+function statusClasses(status) {
+  if (status === "good") return "border-emerald-900 bg-emerald-950/35 text-emerald-200";
+  if (status === "bad" || status === "critical") return "border-rose-900 bg-rose-950/35 text-rose-200";
+  if (status === "warning" || status === "warn") return "border-amber-900 bg-amber-950/35 text-amber-200";
+  return "border-neutral-800 bg-neutral-950 text-neutral-300";
+}
+
+function FindingCard({ finding }) {
+  return (
+    <div className={`rounded-lg border p-3 text-sm ${statusClasses(finding.severity)}`}>
+      <div className="font-semibold">{finding.label}</div>
+      <div className="mt-1 text-neutral-300">{finding.detail}</div>
+      <div className="mt-2 text-xs uppercase tracking-wide text-neutral-500">{finding.action}</div>
+    </div>
+  );
+}
+
+function MiniBar({ value, max = 12, status = "neutral" }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  const color = status === "good" ? "bg-emerald-400" : status === "bad" ? "bg-rose-400" : status === "warn" ? "bg-amber-400" : "bg-neutral-500";
+  return (
+    <div className="h-1.5 overflow-hidden rounded bg-neutral-800">
+      <div className={`h-full rounded ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -145,7 +178,7 @@ function IdentityReview({ deck, onUseFirst, onUseBottom }) {
   );
 }
 
-function InputPanel({
+function InputControls({
   cmdInput,
   companionInput,
   deckInput,
@@ -160,26 +193,29 @@ function InputPanel({
   setCompanionInput,
   setDeckInput,
   setMoxfieldUrl,
+  showTitle = true,
 }) {
   const useFirst = () => draftDeck?.firstCardCandidate && setCmdInput(draftDeck.firstCardCandidate);
   const useBottom = () => draftDeck?.bottomCommandCandidates?.length && setCmdInput(draftDeck.bottomCommandCandidates.join(" + "));
 
   return (
-    <aside className="border-b border-neutral-800 bg-neutral-950/95 p-4 lg:min-h-screen lg:border-b-0 lg:border-r">
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
-        <h1 className="mt-1 text-2xl font-bold text-neutral-50">Deck Analyzer</h1>
-      </div>
+    <div>
+      {showTitle && (
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
+          <h1 className="mt-1 text-2xl font-bold text-neutral-50">Deck Analyzer</h1>
+        </div>
+      )}
 
-      <div className="mt-5 space-y-3">
-        <div className="flex gap-2">
+      <div className={`${showTitle ? "mt-5" : "mt-3"} space-y-3`}>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
           <input
             value={moxfieldUrl}
             onChange={(event) => setMoxfieldUrl(event.target.value)}
             placeholder="Moxfield URL"
-            className="min-w-0 flex-1 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
+            className="min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
           />
-          <button type="button" onClick={onImport} className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100 hover:border-amber-500">
+          <button type="button" onClick={onImport} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-semibold text-neutral-100 hover:border-amber-500">
             Import
           </button>
         </div>
@@ -190,7 +226,7 @@ function InputPanel({
             value={cmdInput}
             onChange={(event) => setCmdInput(event.target.value)}
             placeholder="Kykar, Wind's Fury"
-            className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
+            className="mt-1 min-h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
           />
         </label>
 
@@ -200,7 +236,7 @@ function InputPanel({
             value={companionInput}
             onChange={(event) => setCompanionInput(event.target.value)}
             placeholder="Keruga, the Macrosage"
-            className="mt-1 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
+            className="mt-1 min-h-11 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
           />
         </label>
 
@@ -210,7 +246,7 @@ function InputPanel({
             value={deckInput}
             onChange={(event) => setDeckInput(event.target.value)}
             placeholder={"1 Sol Ring\n1 Arcane Signet\n1 Windfall\n\n1 Kykar, Wind's Fury"}
-            className="mt-1 min-h-[360px] w-full resize-y rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3 font-mono text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
+            className="mt-1 min-h-[280px] w-full resize-y rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3 font-mono text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:min-h-[360px] sm:text-sm"
             spellCheck={false}
           />
         </label>
@@ -224,10 +260,41 @@ function InputPanel({
           type="button"
           onClick={onAnalyze}
           disabled={loading}
-          className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          className="min-h-12 w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
         >
           Analyze Deck
         </button>
+      </div>
+    </div>
+  );
+}
+
+function InputPanel(props) {
+  const { draftDeck, hasAnalysis } = props;
+
+  return (
+    <aside className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-4">
+      <div className="lg:hidden">
+        {hasAnalysis ? (
+          <details className="rounded-lg border border-neutral-800 bg-neutral-900/80">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">Deck input</div>
+                <div className="text-sm font-semibold text-neutral-100">{names(draftDeck?.commanders || [])}</div>
+              </div>
+              <span className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-400">Edit</span>
+            </summary>
+            <div className="border-t border-neutral-800 p-3">
+              <InputControls {...props} showTitle={false} />
+            </div>
+          </details>
+        ) : (
+          <InputControls {...props} />
+        )}
+      </div>
+
+      <div className="hidden lg:block">
+        <InputControls {...props} />
       </div>
     </aside>
   );
@@ -235,7 +302,7 @@ function InputPanel({
 
 function EmptyWorkspace({ draftDeck }) {
   return (
-    <main className="p-5 lg:p-8">
+    <main className="p-3 sm:p-5 lg:p-8">
       <div className="mx-auto max-w-6xl">
         <div className={panelClass("p-5")}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Ready</div>
@@ -253,35 +320,72 @@ function EmptyWorkspace({ draftDeck }) {
 
 function SummaryStrip({ analysis, deck }) {
   const bracket = analysis.bracket;
+  const urgentFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity === "critical" || finding.severity === "warning").length;
   return (
-    <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 xl:grid-cols-9">
       <Metric label="Bracket" value={bracket?.rangeLabel || "-"} sub={bracket?.label} tone={bracket?.bracket >= 4 ? "bad" : bracket?.bracket === 3 ? "warn" : "good"} />
       <Metric label="Main" value={`${analysis.stats?.cardCount}/${deck.expectedMainCount}`} tone={analysis.stats?.cardCount === deck.expectedMainCount ? "good" : "warn"} />
       <Metric label="Lands" value={analysis.stats?.landCount} tone={analysis.stats?.landCount >= 36 && analysis.stats?.landCount <= 40 ? "good" : "warn"} />
       <Metric label="Ramp" value={analysis.stats?.rampCount} tone={analysis.stats?.rampCount >= 8 ? "good" : "bad"} />
+      <Metric label="Flow" value={analysis.structure?.cardFlowProfile?.total ?? "-"} tone={analysis.structure?.cardFlowProfile?.status === "good" ? "good" : analysis.structure?.cardFlowProfile?.status === "bad" ? "bad" : "warn"} />
       <Metric label="Removal" value={analysis.stats?.removalCount} tone={analysis.stats?.removalCount >= 3 ? "good" : "warn"} />
       <Metric label="Wipes" value={analysis.stats?.boardWipeCount} tone={analysis.stats?.boardWipeCount >= 2 ? "good" : "warn"} />
       <Metric label="Avg MV" value={analysis.stats?.avgCmc} tone={analysis.stats?.avgCmc <= 3.2 ? "good" : "warn"} />
-      <Metric label="Companion" value={deck.companions.length ? "Yes" : "No"} />
+      <Metric label="Findings" value={urgentFindings} tone={urgentFindings ? "warn" : "good"} sub="Urgent" />
     </div>
   );
 }
 
 function OverviewTab({ analysis, deck }) {
+  const winPlan = analysis.structure?.winPlan;
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-      <section className={panelClass("p-5")}>
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Priority Findings</div>
+        <div className="mt-3 grid gap-2 sm:gap-3 md:grid-cols-2">
+          {(analysis.priorityFindings || []).map((finding) => (
+            <FindingCard key={`${finding.label}-${finding.action}`} finding={finding} />
+          ))}
+        </div>
+      </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strategy</div>
         <p className="mt-2 text-sm leading-6 text-neutral-300">{analysis.strategy}</p>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-5 space-y-3">
+          <div className={`rounded-lg border p-3 ${statusClasses(winPlan?.status)}`}>
+            <div className="text-xs uppercase tracking-wide text-neutral-500">Win Plan</div>
+            <div className="mt-1 text-sm font-semibold">{winPlan?.primary || "Unknown"}</div>
+            <div className="mt-2 text-sm text-neutral-300">{winPlan?.note}</div>
+          </div>
+          {[
+            ["Engines", winPlan?.engines],
+            ["Payoffs", winPlan?.payoffs],
+            ["Finishers", winPlan?.finishers],
+          ].map(([label, cards]) => (
+            <div key={label}>
+              <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {(cards || []).length
+                  ? cards.map((card) => <span key={card} className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-300">{card}</span>)
+                  : <span className="text-sm text-neutral-500">None clearly detected</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Consistency Checks</div>
+        <div className="mt-3 grid gap-3">
           {analysis.consistencyFlags.map((flag) => (
             <StatusLine key={flag.text} ok={flag.ok}>{flag.text}</StatusLine>
           ))}
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Identity</div>
         <div className="mt-3 space-y-3 text-sm">
           <div>
@@ -298,7 +402,7 @@ function OverviewTab({ analysis, deck }) {
         </div>
       </section>
 
-      <section className={`${panelClass("p-5")} xl:col-span-2`}>
+      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Synergy Clusters</div>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           {analysis.synergyClusters.map((cluster) => (
@@ -318,13 +422,111 @@ function OverviewTab({ analysis, deck }) {
   );
 }
 
+function StructureTab({ analysis }) {
+  const structure = analysis.structure || {};
+  const profiles = [
+    ["Interaction", structure.interactionProfile, [
+      ["Total", structure.interactionProfile?.total],
+      ["Instant", structure.interactionProfile?.instantSpeed],
+      ["Stack", structure.interactionProfile?.stackInteraction],
+    ]],
+    ["Card Flow", structure.cardFlowProfile, [
+      ["Draw", structure.cardFlowProfile?.draw],
+      ["Tutors", structure.cardFlowProfile?.tutors],
+      ["Engines", structure.cardFlowProfile?.engines],
+    ]],
+    ["Resilience", structure.resilienceProfile, [
+      ["Protect", structure.resilienceProfile?.protection],
+      ["Recursion", structure.resilienceProfile?.recursion],
+      ["Wipes", structure.resilienceProfile?.boardWipes],
+    ]],
+  ];
+
+  return (
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Role Balance</div>
+        <div className="mt-3 grid gap-2 sm:gap-3 md:grid-cols-2">
+          {(structure.roleBalance || []).map((role) => (
+            <div key={role.key} className={`rounded-lg border p-3 ${statusClasses(role.status)}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{role.label}</div>
+                  <div className="mt-1 text-xs text-neutral-500">Target {role.target}</div>
+                </div>
+                <div className="text-2xl font-bold">{role.count}</div>
+              </div>
+              <div className="mt-3">
+                <MiniBar value={role.count} status={role.status} />
+              </div>
+              <p className="mt-3 text-sm text-neutral-300">{role.detail}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {role.examples.length
+                  ? role.examples.map((card) => <span key={card} className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300">{card}</span>)
+                  : <span className="text-xs text-neutral-500">No clear examples detected</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="space-y-4">
+        {profiles.map(([label, profile, rows]) => (
+          <section key={label} className={panelClass("p-4 sm:p-5")}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
+                <p className="mt-2 text-sm text-neutral-400">{profile?.note}</p>
+              </div>
+              <span className={`rounded border px-2 py-1 text-xs uppercase ${statusClasses(profile?.status)}`}>{profile?.status || "unknown"}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {rows.map(([rowLabel, value]) => (
+                <Metric key={rowLabel} label={rowLabel} value={value ?? 0} />
+              ))}
+            </div>
+          </section>
+        ))}
+
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card Type Mix</div>
+          <div className="mt-3 space-y-3">
+            {(structure.typeMix || []).map((item) => (
+              <div key={item.type}>
+                <div className="flex justify-between text-sm">
+                  <span className="text-neutral-300">{item.type}</span>
+                  <span className="text-neutral-500">{item.count} ({item.pct}%)</span>
+                </div>
+                <MiniBar value={item.pct} max={100} />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Curve Bands</div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {(structure.curveBands || []).map((band) => (
+              <div key={band.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <div className="text-xs text-neutral-500">{band.label}</div>
+                <div className="mt-1 text-xl font-semibold text-neutral-100">{band.count}</div>
+                <div className="mt-1 text-xs text-neutral-500">MV {band.key}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function PowerTab({ analysis }) {
   const bracket = analysis.bracket;
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <section className={panelClass("p-5")}>
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Bracket</div>
-        <div className="mt-2 text-4xl font-bold text-neutral-50">{bracket.rangeLabel}</div>
+        <div className="mt-2 text-3xl font-bold text-neutral-50 sm:text-4xl">{bracket.rangeLabel}</div>
         <div className="mt-1 text-sm text-neutral-400">{bracket.label} confidence {Math.round(bracket.confidence * 100)}%</div>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Metric label="Win Turn" value={`~${bracket.expectedWinTurn}`} />
@@ -332,7 +534,7 @@ function PowerTab({ analysis }) {
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Evidence</div>
         <div className="mt-3 space-y-2">
           {bracket.reasons.map((reason) => (
@@ -341,7 +543,7 @@ function PowerTab({ analysis }) {
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Signals</div>
         <div className="mt-3 space-y-3">
           <details className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
@@ -360,7 +562,7 @@ function PowerTab({ analysis }) {
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Combo Packages</div>
         <div className="mt-3 space-y-3">
           {bracket.comboSignals.length ? bracket.comboSignals.map((combo) => (
@@ -380,10 +582,10 @@ function PowerTab({ analysis }) {
 
 function ManaTab({ analysis, pipData, cmcBuckets }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <section className={panelClass("p-5")}>
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Mana Curve</div>
-        <div className="mt-4 h-64">
+        <div className="mt-4 h-56 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={cmcBuckets} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
               <XAxis dataKey="cmc" tick={{ fill: "#a3a3a3", fontSize: 12 }} />
@@ -395,9 +597,9 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Pip Distribution</div>
-        <div className="mt-4 h-64">
+        <div className="mt-4 h-56 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={pipData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
               <XAxis dataKey="label" tick={{ fill: "#a3a3a3", fontSize: 12 }} />
@@ -436,18 +638,18 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
 
   return (
     <section className={panelClass("overflow-hidden")}>
-      <div className="flex flex-col gap-3 border-b border-neutral-800 p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 border-b border-neutral-800 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card Scores</div>
           <div className="text-sm text-neutral-400">{rows.length} visible cards</div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0">
           {ROLE_FILTERS.map((filter) => (
             <button
               type="button"
               key={filter.id}
               onClick={() => setRoleFilter(filter.id)}
-              className={`rounded border px-2 py-1 text-xs ${roleFilter === filter.id ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
+              className={`min-h-9 shrink-0 rounded border px-2 py-1 text-xs ${roleFilter === filter.id ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
             >
               {filter.label}
             </button>
@@ -455,7 +657,41 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-neutral-800 md:hidden">
+        {rows.map((score) => {
+          const card = findCard(cardMap, score.name);
+          const roles = score.roles?.length ? score.roles : getRoleKeys(card);
+          const isExpanded = expanded === score.name;
+          return (
+            <article key={score.name} className="bg-neutral-900/70 p-3">
+              <button type="button" onClick={() => setExpanded(isExpanded ? null : score.name)} className="block w-full text-left">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium leading-snug text-neutral-100">{score.name}</div>
+                    <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {score.note || "No special signal"}</div>
+                  </div>
+                  <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${scoreColor(score.score)}`}>
+                    {score.score > 0 ? "+" : ""}{score.score}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {roles.map((role) => <RoleChip key={role} role={role} />)}
+                </div>
+              </button>
+              {isExpanded && (
+                <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                  <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
+                  <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
+                  <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
+                  <div className="mt-1 text-sm leading-6 text-neutral-300">{getCardText(card) || "No text available."}</div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-neutral-950 text-left text-xs uppercase tracking-wide text-neutral-500">
             <tr>
@@ -523,12 +759,12 @@ function CardsTab({ analysis, cardMap, roleFilter, setRoleFilter, sortCol, sortD
 
 function UpgradesTab({ analysis }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <section className={panelClass("p-5")}>
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended Swaps</div>
         <div className="mt-3 space-y-3">
           {analysis.upgrades.map((upgrade) => (
-            <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+            <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div>
                   <div className="text-xs text-neutral-500">Cut</div>
@@ -547,12 +783,12 @@ function UpgradesTab({ analysis }) {
         </div>
       </section>
 
-      <section className={panelClass("p-5")}>
+      <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Candidate Cards</div>
         <div className="mt-3 space-y-3">
           {[...analysis.sideboardAnalysis, ...analysis.consideringAnalysis].length === 0 && <div className="text-sm text-neutral-500">No sideboard or considering cards provided.</div>}
           {[...analysis.sideboardAnalysis, ...analysis.consideringAnalysis].map((candidate) => (
-            <div key={candidate.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+            <div key={candidate.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="font-semibold text-neutral-100">{candidate.name}</div>
                 <span className="rounded border border-neutral-700 px-2 py-0.5 text-xs uppercase text-neutral-300">{candidate.recommendation}</span>
@@ -568,10 +804,10 @@ function UpgradesTab({ analysis }) {
 
 function DebugTab({ analysis, deck, cardMap, notFound }) {
   return (
-    <section className={panelClass("p-5")}>
+    <section className={panelClass("p-4 sm:p-5")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Debug</div>
       <pre className="mt-3 max-h-[640px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">
-        {JSON.stringify({ deck, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
+        {JSON.stringify({ deck, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
       </pre>
     </section>
   );
@@ -605,26 +841,26 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
   }, [analysis.scores, cardMap]);
 
   return (
-    <main className="min-w-0 p-5 lg:p-8">
+    <main className="min-w-0 p-3 sm:p-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
         <header className="space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">Commander Analysis</div>
-              <h2 className="mt-1 text-2xl font-bold text-neutral-50">{names(deck.commanders)}</h2>
+              <h2 className="mt-1 text-xl font-bold leading-tight text-neutral-50 sm:text-2xl">{names(deck.commanders)}</h2>
               {deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
             </div>
           </div>
           <SummaryStrip analysis={analysis} deck={deck} />
         </header>
 
-        <nav className="flex gap-2 overflow-x-auto border-b border-neutral-800 pb-2">
+        <nav className="sticky top-0 z-20 -mx-3 flex gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+              className={`min-h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
             >
               {tab.label}
             </button>
@@ -632,6 +868,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab 
         </nav>
 
         {activeTab === "overview" && <OverviewTab analysis={analysis} deck={deck} />}
+        {activeTab === "structure" && <StructureTab analysis={analysis} />}
         {activeTab === "power" && <PowerTab analysis={analysis} />}
         {activeTab === "mana" && <ManaTab analysis={analysis} pipData={pipData} cmcBuckets={cmcBuckets} />}
         {activeTab === "cards" && (
@@ -756,6 +993,7 @@ export default function App() {
         companionInput={companionInput}
         deckInput={deckInput}
         error={error}
+        hasAnalysis={Boolean(analysis)}
         moxfieldUrl={moxfieldUrl}
         draftDeck={draftDeck}
         loading={loading}

@@ -8,9 +8,9 @@ import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckP
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TABS = [
-  { id: "scorecard", label: "Scorecard" },
-  { id: "overview", label: "Overview" },
-  { id: "structure", label: "Structure" },
+  { id: "scorecard", label: "Home" },
+  { id: "overview", label: "Game Plan" },
+  { id: "structure", label: "Coverage" },
   { id: "power", label: "Power" },
   { id: "mana", label: "Mana" },
   { id: "cards", label: "Cards" },
@@ -560,45 +560,103 @@ function ScorecardPanel({ item, analysisReady }) {
 }
 
 function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
+  const urgentFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity !== "notice").slice(0, 4);
+  const topCuts = (analysis.cutCandidates || []).slice(0, 4);
+  const topUpgrades = (analysis.upgrades || []).slice(0, 3);
+  const needsAttention = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
+  const strengths = (analysis.highlights?.strengths || []).filter((item) => !item.ignored).slice(0, 4);
+
   return (
     <div className="space-y-3 sm:space-y-4">
-      <section className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-3 sm:gap-4 xl:grid-cols-[0.85fr_1.15fr]">
         <div className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Overall Score</div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Home</div>
           <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-5xl" : "text-3xl"}`}>{calculationValue(analysisReady, analysis.overallScore)}</div>
-          <div className="mt-3 text-sm text-neutral-400">Local score based on your current slider targets, commander, and core identity cards.</div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
-            <div className="mt-3 space-y-2">
-              {(analysis.highlights?.needsAttention || []).map((item) => (
-                  <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                    <span className="text-sm text-neutral-200">{item.label}</span>
-                    <span className={`font-mono text-sm ${analysisReady ? scoreColor(Math.round((item.score - 50) / 10)) : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
-                  </div>
-                ))}
-              </div>
+          <div className="mt-3 text-sm text-neutral-400">Action dashboard based on the current commander, core cards, and tuning targets.</div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Metric label="Urgent" value={calculationValue(analysisReady, urgentFindings.length)} tone={analysisReady ? (urgentFindings.length ? "warn" : "good") : "neutral"} />
+            <Metric label="Cut Ideas" value={calculationValue(analysisReady, topCuts.length)} tone="neutral" />
           </div>
-          <div className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strengths</div>
-            <div className="mt-3 space-y-2">
-              {(analysis.highlights?.strengths || []).map((item) => (
-                  <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                    <span className="text-sm text-neutral-200">{item.label}</span>
-                    <span className={`font-mono text-sm ${analysisReady ? "text-emerald-300" : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
-                  </div>
-                ))}
-              </div>
+        </div>
+
+        <div className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Actions</div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {urgentFindings.length
+              ? urgentFindings.map((finding) => <FindingCard key={`${finding.label}-${finding.action}`} finding={finding} />)
+              : <FindingCard finding={{ severity: "notice", label: "No urgent issue", detail: "The main scorecard checks are not flagging a critical fix.", action: "Use Cuts or playtest notes for finer tuning." }} />}
           </div>
         </div>
       </section>
 
-      <SettingsPanel settings={settings} setSettings={setSettings} />
+      <section className="grid gap-3 sm:gap-4 xl:grid-cols-3">
+        <div className={panelClass("p-4")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
+          <div className="mt-3 space-y-2">
+            {needsAttention.map((item) => (
+              <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <span className="text-sm text-neutral-200">{item.label}</span>
+                <span className={`font-mono text-sm ${analysisReady ? scoreColor(Math.round((item.score - 50) / 10)) : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
 
-      <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-        {(analysis.scorecard || []).map((item) => <ScorecardPanel key={item.key} item={item} analysisReady={analysisReady} />)}
+        <div className={panelClass("p-4")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Likely Cuts</div>
+          <div className="mt-3 space-y-2">
+            {topCuts.length ? topCuts.map((candidate) => (
+              <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-neutral-100">{candidate.name}</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
+                </div>
+                <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
+              </div>
+            )) : <div className="text-sm text-neutral-500">No cut candidates available yet.</div>}
+          </div>
+        </div>
+
+        <div className={panelClass("p-4")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strengths</div>
+          <div className="mt-3 space-y-2">
+            {strengths.map((item) => (
+              <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <span className="text-sm text-neutral-200">{item.label}</span>
+                <span className={`font-mono text-sm ${analysisReady ? "text-emerald-300" : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Upgrade Ideas</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          {topUpgrades.length ? topUpgrades.map((upgrade) => (
+            <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-xs text-neutral-500">Swap</div>
+              <div className="mt-1 text-sm text-rose-200">{upgrade.cut}</div>
+              <div className="text-xs text-neutral-600">to</div>
+              <div className="text-sm font-semibold text-emerald-200">{upgrade.add}</div>
+            </div>
+          )) : <div className="text-sm text-neutral-500">No upgrade pairings available yet.</div>}
+        </div>
+      </section>
+
+      <details className="space-y-3">
+        <summary className="cursor-pointer rounded-lg border border-neutral-800 bg-neutral-900/80 p-4 text-sm font-semibold text-neutral-100 sm:p-5">Tuning</summary>
+        <div className="mt-4">
+          <SettingsPanel settings={settings} setSettings={setSettings} />
+        </div>
+      </details>
+
+      <details className="space-y-3">
+        <summary className="cursor-pointer rounded-lg border border-neutral-800 bg-neutral-900/80 p-4 text-sm font-semibold text-neutral-100 sm:p-5">Score Details</summary>
+        <div className="mt-4 grid gap-3 sm:gap-4 lg:grid-cols-2">
+          {(analysis.scorecard || []).map((item) => <ScorecardPanel key={item.key} item={item} analysisReady={analysisReady} />)}
+        </div>
+      </details>
     </div>
   );
 }
@@ -709,16 +767,7 @@ function CommanderRolePanel({ commanderProfile }) {
 function OverviewTab({ analysis, deck }) {
   const winPlan = analysis.structure?.winPlan;
   return (
-    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Priority Findings</div>
-        <div className="mt-3 grid gap-2 sm:gap-3 md:grid-cols-2">
-          {(analysis.priorityFindings || []).map((finding) => (
-            <FindingCard key={`${finding.label}-${finding.action}`} finding={finding} />
-          ))}
-        </div>
-      </section>
-
+    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.15fr_0.85fr]">
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strategy</div>
         <p className="mt-2 text-sm leading-6 text-neutral-300">{analysis.strategy}</p>
@@ -746,19 +795,10 @@ function OverviewTab({ analysis, deck }) {
         </div>
       </section>
 
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Consistency Checks</div>
-        <div className="mt-3 grid gap-3">
-          {analysis.consistencyFlags.map((flag) => (
-            <StatusLine key={flag.text} ok={flag.ok}>{flag.text}</StatusLine>
-          ))}
-        </div>
-      </section>
-
       <CommanderRolePanel commanderProfile={analysis.commanderProfile} />
 
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Identity</div>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Core Identity</div>
         <div className="mt-3 space-y-3 text-sm">
           <div>
             <div className="text-neutral-500">Commander</div>
@@ -779,6 +819,14 @@ function OverviewTab({ analysis, deck }) {
           {deck.inferenceWarnings.map((warning) => (
             <StatusLine key={warning} ok={false}>{warning}</StatusLine>
           ))}
+          <div>
+            <div className="text-neutral-500">Marked Core Cards</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {(analysis.coreCards || []).length
+                ? analysis.coreCards.map((card) => <span key={card} className="rounded border border-amber-800 bg-amber-950/40 px-2 py-1 text-xs text-amber-200">{card}</span>)
+                : <span className="text-sm text-neutral-500">None marked yet</span>}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -869,38 +917,10 @@ function StructureTab({ analysis }) {
         ))}
 
         <section className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card Type Mix</div>
-          <div className="mt-3 space-y-3">
-            {(structure.typeMix || []).map((item) => (
-              <div key={item.type}>
-                <div className="flex justify-between text-sm">
-                  <span className="text-neutral-300">{item.type}</span>
-                  <span className="text-neutral-500">{item.count} ({item.pct}%)</span>
-                </div>
-                <MiniBar value={item.pct} max={100} />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className={panelClass("p-4 sm:p-5")}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Answer Gaps</div>
           <div className="mt-3 space-y-2">
             {(structure.answerGaps || []).map((gap) => (
               <StatusLine key={gap.key} ok={gap.ok}>{gap.message}</StatusLine>
-            ))}
-          </div>
-        </section>
-
-        <section className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Curve Bands</div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {(structure.curveBands || []).map((band) => (
-              <div key={band.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                <div className="text-xs text-neutral-500">{band.label}</div>
-                <div className="mt-1 text-xl font-semibold text-neutral-100">{band.count}</div>
-                <div className="mt-1 text-xs text-neutral-500">MV {band.key}</div>
-              </div>
             ))}
           </div>
         </section>
@@ -993,6 +1013,7 @@ function PowerTab({ analysis, analysisReady }) {
 }
 
 function ManaTab({ analysis, pipData, cmcBuckets }) {
+  const curveBands = analysis.structure?.curveBands || [];
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
       <section className={panelClass("p-4 sm:p-5")}>
@@ -1037,6 +1058,26 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-3 text-sm text-neutral-400">{analysis.splashNote}</p>
+      </section>
+
+      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Curve Bands</div>
+            <p className="mt-2 text-sm text-neutral-400">Mana-value bands grouped around setup, commander turns, and top end.</p>
+          </div>
+          <Metric label="Avg MV" value={analysis.stats?.avgCmc ?? "-"} tone={analysis.stats?.avgCmc <= analysis.settings?.avgManaValueTarget ? "good" : "warn"} sub={`Target ${analysis.settings?.avgManaValueTarget ?? "-"}`} />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+          {curveBands.map((band) => (
+            <div key={band.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-xs text-neutral-500">{band.label}</div>
+              <div className="mt-1 text-xl font-semibold text-neutral-100">{band.count}</div>
+              <div className="mt-1 text-xs text-neutral-500">MV {band.key}</div>
+              <div className="mt-2 text-xs text-neutral-600">{band.detail}</div>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );

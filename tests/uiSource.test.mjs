@@ -33,7 +33,7 @@ test("mana costs render with project mana icon assets", () => {
   assert.match(source, /alt=\{`\{\$\{token\}\}`\}/);
 });
 
-test("overview renders commander role classification details", () => {
+test("game plan renders commander role classification details", () => {
   assert.match(source, /function CommanderRolePanel/);
   assert.match(source, /function CommanderRoleGraph/);
   assert.match(source, /COMMANDER_ROLE_POINTS/);
@@ -46,4 +46,19 @@ test("overview renders commander role classification details", () => {
   assert.match(source, /Low-confidence classification/);
   assert.match(source, /commander\.evidence/);
   assert.match(source, /alternateCategories/);
+});
+
+test("analysis tabs are organized by user job", () => {
+  assert.match(source, /\{ id: "scorecard", label: "Home" \}/);
+  assert.match(source, /\{ id: "overview", label: "Game Plan" \}/);
+  assert.match(source, /\{ id: "structure", label: "Coverage" \}/);
+  assert.match(source, /Next Actions/);
+  assert.match(source, /Likely Cuts/);
+  assert.match(source, /Score Details/);
+  assert.match(source, /Core Identity/);
+  assert.match(source, /Synergy Clusters/);
+  assert.match(source, /Role Balance/);
+  assert.match(source, /Answer Gaps/);
+  assert.match(source, /Curve Bands/);
+  assert.match(source, /function ManaTab/);
 });

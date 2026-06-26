@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildLocalAnalysis } from "../lib/deckAnalysis.mjs";
-import { formatManaSymbols, formatTextSymbols, makeBasicLandCard } from "../lib/cardUtils.mjs";
+import { formatManaSymbols, formatTextSymbols, getRoleEvidence, getRoles, makeBasicLandCard } from "../lib/cardUtils.mjs";
 import { parseDecklist } from "../lib/deckParser.mjs";
 
 function card(name, overrides = {}) {
@@ -204,6 +204,163 @@ Deck:
   assert.ok(byName["Rest in Peace"].includes("graveyardHate"));
   assert.ok(byName["Goblin Bombardment"].includes("sacrificeOutlet"));
   assert.ok(byName.Fervor.includes("haste"));
+});
+
+test("analysis returns normalized type groups and role evidence", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+1 Island
+1 Sol Ring
+1 Counterspell
+1 Wrath of God
+1 Demonic Tutor
+1 Swiftfoot Boots
+1 Reanimate
+1 Thassa's Oracle
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", type_line: "Artifact", oracle_text: "{T}: Add {C}{C}." }),
+    Counterspell: card("Counterspell", { cmc: 2, mana_cost: "{U}{U}", type_line: "Instant", oracle_text: "Counter target spell." }),
+    "Wrath of God": card("Wrath of God", { cmc: 4, mana_cost: "{2}{W}{W}", type_line: "Sorcery", oracle_text: "Destroy all creatures." }),
+    "Demonic Tutor": card("Demonic Tutor", { cmc: 2, mana_cost: "{1}{B}", type_line: "Sorcery", oracle_text: "Search your library for a card, put that card into your hand, then shuffle." }),
+    "Swiftfoot Boots": card("Swiftfoot Boots", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "Equipped creature has hexproof and haste." }),
+    Reanimate: card("Reanimate", { cmc: 1, mana_cost: "{B}", type_line: "Sorcery", oracle_text: "Put target creature card from a graveyard onto the battlefield under your control." }),
+    "Thassa's Oracle": card("Thassa's Oracle", { cmc: 2, mana_cost: "{U}{U}", type_line: "Creature", oracle_text: "When this creature enters, look at the top X cards. If X is greater than or equal to the number of cards in your library, you win the game." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const typeKeys = analysis.cardGroups.typeGroups.map((group) => group.key);
+  const ramp = analysis.cardGroups.roleGroups.find((group) => group.key === "ramp");
+  const combo = analysis.cardGroups.roleGroups.find((group) => group.key === "comboPiece");
+
+  assert.ok(typeKeys.includes("creatures"));
+  assert.ok(typeKeys.includes("instants"));
+  assert.ok(typeKeys.includes("sorceries"));
+  assert.ok(typeKeys.includes("artifacts"));
+  assert.ok(typeKeys.includes("lands"));
+  assert.ok(ramp.evidence.some((item) => item.cardName === "Sol Ring" && item.reason && item.confidence && item.matchingRule && item.source));
+  assert.ok(combo.evidence.some((item) => item.cardName === "Thassa's Oracle" && item.confidence === "high"));
+});
+
+test("card grouping covers every supported type bucket", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Type Commander
+
+Deck:
+1 Type Creature
+1 Type Instant
+1 Type Sorcery
+1 Type Artifact
+1 Type Enchantment
+1 Type Planeswalker
+1 Type Battle
+1 Island
+`);
+  const cardMap = {
+    "Type Commander": card("Type Commander", { type_line: "Legendary Creature", oracle_text: "Ward 2." }),
+    "Type Creature": card("Type Creature", { type_line: "Creature", oracle_text: "Vigilance." }),
+    "Type Instant": card("Type Instant", { type_line: "Instant", oracle_text: "Target creature gets +1/+1 until end of turn." }),
+    "Type Sorcery": card("Type Sorcery", { type_line: "Sorcery", oracle_text: "Create a token." }),
+    "Type Artifact": card("Type Artifact", { type_line: "Artifact", oracle_text: "Ward 2." }),
+    "Type Enchantment": card("Type Enchantment", { type_line: "Enchantment", oracle_text: "Creatures you control have vigilance." }),
+    "Type Planeswalker": card("Type Planeswalker", { type_line: "Legendary Planeswalker", oracle_text: "+1: Scry 1." }),
+    "Type Battle": card("Type Battle", { type_line: "Battle", oracle_text: "When this enters, draw a card." }),
+    Island: makeBasicLandCard("Island"),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const groups = Object.fromEntries(analysis.cardGroups.typeGroups.map((group) => [group.key, group]));
+
+  for (const key of ["creatures", "instants", "sorceries", "artifacts", "enchantments", "planeswalkers", "battles", "lands"]) {
+    assert.ok(groups[key], `${key} group should exist`);
+    assert.ok(groups[key].count >= 1, `${key} group should have cards`);
+  }
+  assert.ok(groups.creatures.cards.some((item) => item.name === "Type Creature"));
+  assert.ok(groups.planeswalkers.cards.some((item) => item.name === "Type Planeswalker"));
+  assert.ok(groups.battles.cards.some((item) => item.name === "Type Battle"));
+});
+
+test("role detection covers clear positives and near misses", () => {
+  const cases = [
+    ["ramp", card("Ramp Spell", { oracle_text: "Search your library for a basic land card, put it onto the battlefield, then shuffle." }), card("Not Ramp", { oracle_text: "Put a +1/+1 counter on target creature." })],
+    ["draw", card("Draw Spell", { oracle_text: "Draw two cards." }), card("Not Draw", { oracle_text: "Each opponent draws a bead on your plan." })],
+    ["removal", card("Removal Spell", { oracle_text: "Exile target creature." }), card("Not Removal", { oracle_text: "Exile the top card of your library. You may play it this turn." })],
+    ["boardWipe", card("Wipe Spell", { oracle_text: "Destroy all creatures." }), card("Not Wipe", { oracle_text: "Destroy target creature." })],
+    ["tutor", card("Tutor Spell", { oracle_text: "Search your library for a card, put it into your hand, then shuffle." }), card("Not Tutor", { oracle_text: "Search your library for a basic land card, reveal it, then shuffle." })],
+    ["protection", card("Protect Spell", { oracle_text: "Target creature gains hexproof until end of turn." }), card("Not Protect", { oracle_text: "Prevent the next 1 damage that would be dealt to any target." })],
+    ["recursion", card("Recursion Spell", { oracle_text: "Return target creature card from your graveyard to your hand." }), card("Not Recursion", { oracle_text: "Exile target card from an opponent's graveyard." })],
+    ["fastMana", card("Mana Vault", { name: "Mana Vault", oracle_text: "{T}: Add {C}{C}{C}." }), card("Worn Powerstone", { name: "Worn Powerstone", oracle_text: "{T}: Add {C}{C}." })],
+    ["stax", card("Stax Piece", { oracle_text: "Spells your opponents cast cost {1} more to cast." }), card("Not Stax", { oracle_text: "Spells you cast cost {1} less to cast." })],
+    ["comboPiece", card("Thassa's Oracle", { name: "Thassa's Oracle", oracle_text: "If X is greater than or equal to the number of cards in your library, you win the game." }), card("Laboratory Assistant", { name: "Laboratory Assistant", oracle_text: "When this enters, mill a card." })],
+  ];
+
+  for (const [role, positive, nearMiss] of cases) {
+    assert.equal(getRoles(positive)[role], true, `${role} positive should match`);
+    assert.equal(getRoles(nearMiss)[role], false, `${role} near miss should not match`);
+    const evidence = getRoleEvidence(positive).find((item) => item.role === role);
+    assert.ok(evidence?.cardName, `${role} evidence includes card name`);
+    assert.ok(evidence?.reason, `${role} evidence includes reason`);
+    assert.ok(evidence?.confidence, `${role} evidence includes confidence`);
+    assert.ok(evidence?.matchingRule, `${role} evidence includes matching rule`);
+  }
+});
+
+test("card group summaries include Scryfall image URLs and missing-image fallback data", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Image Commander
+
+Deck:
+1 Image Card
+1 No Image Card
+`);
+  const cardMap = {
+    "Image Commander": card("Image Commander", { type_line: "Legendary Creature", oracle_text: "Ward 2." }),
+    "Image Card": card("Image Card", {
+      type_line: "Artifact",
+      oracle_text: "{T}: Add {C}.",
+      image_uris: { normal: "https://cards.scryfall.io/normal/front/example.jpg" },
+    }),
+    "No Image Card": card("No Image Card", { type_line: "Instant", oracle_text: "Draw a card." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const artifact = analysis.cardGroups.typeGroups.find((group) => group.key === "artifacts").cards.find((item) => item.name === "Image Card");
+  const instant = analysis.cardGroups.typeGroups.find((group) => group.key === "instants").cards.find((item) => item.name === "No Image Card");
+
+  assert.equal(artifact.imageUrl, "https://cards.scryfall.io/normal/front/example.jpg");
+  assert.equal(instant.imageUrl, null);
+});
+
+test("answer gaps include concrete counts and expected ranges", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Counterspell
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    Counterspell: card("Counterspell", { cmc: 2, mana_cost: "{U}{U}", type_line: "Instant", oracle_text: "Counter target spell." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const wipeGap = analysis.structure.answerGaps.find((gap) => gap.key === "boardWipes");
+  const graveGap = analysis.structure.answerGaps.find((gap) => gap.key === "graveyardInteraction");
+
+  assert.equal(wipeGap.count, 0);
+  assert.match(wipeGap.message, /0 found; 3-4/);
+  assert.match(graveGap.message, /0 found; 1-3/);
+  assert.ok(analysis.priorityFindings.some((finding) => finding.detail.includes("Board wipes")));
 });
 
 test("scorecard responds to adjustable targets", () => {

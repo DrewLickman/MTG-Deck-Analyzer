@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatManaSymbols, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
+import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
@@ -94,12 +94,56 @@ function RoleChip({ role }) {
   );
 }
 
-function ManaCostDisplay({ card }) {
-  const symbols = formatManaSymbols(getManaCost(card));
+function manaTokens(manaCost) {
+  return Array.from(String(manaCost || "").matchAll(/\{([^}]+)\}/g)).map((match) => match[1]);
+}
+
+function ManaSymbol({ token }) {
+  const upper = String(token || "").toUpperCase();
+  const asset = upper.length === 1 && ["W", "U", "B", "R", "G", "C", "T"].includes(upper) ? `/mana/${upper.toLowerCase()}.svg` : null;
+  if (asset) {
+    return <img src={asset} alt={`{${token}}`} title={`{${token}}`} className="h-5 w-5 shrink-0" />;
+  }
   return (
-    <span className="inline-flex min-h-7 items-center rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm leading-none text-neutral-100">
-      {symbols || "No cost"}
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-neutral-500 bg-neutral-200 px-1 text-[10px] font-bold leading-none text-neutral-900" title={`{${token}}`}>
+      {upper}
     </span>
+  );
+}
+
+function ManaCostDisplay({ card }) {
+  const tokens = manaTokens(getManaCost(card));
+  return (
+    <span className="inline-flex min-h-7 items-center gap-0.5 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm leading-none text-neutral-100">
+      {tokens.length ? tokens.map((token, index) => <ManaSymbol key={`${token}-${index}`} token={token} />) : "No cost"}
+    </span>
+  );
+}
+
+function cardPreviewUrl(card) {
+  return card?.image_uris?.normal || card?.card_faces?.find((face) => face.image_uris?.normal)?.image_uris?.normal || null;
+}
+
+function CardPreview({ card, name }) {
+  const imageUrl = cardPreviewUrl(card);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="group relative inline-flex" onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 group-hover:border-amber-500 group-hover:text-amber-200"
+      >
+        {name}
+      </button>
+      <div className={`pointer-events-none absolute left-0 top-full z-30 mt-2 w-56 rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden group-hover:block"}`}>
+        {imageUrl ? (
+          <img src={imageUrl} alt={name} className="w-full rounded-md" loading="lazy" />
+        ) : (
+          <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -728,6 +772,15 @@ function StructureTab({ analysis }) {
         </section>
 
         <section className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Answer Gaps</div>
+          <div className="mt-3 space-y-2">
+            {(structure.answerGaps || []).map((gap) => (
+              <StatusLine key={gap.key} ok={gap.ok}>{gap.message}</StatusLine>
+            ))}
+          </div>
+        </section>
+
+        <section className={panelClass("p-4 sm:p-5")}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Curve Bands</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {(structure.curveBands || []).map((band) => (
@@ -746,6 +799,7 @@ function StructureTab({ analysis }) {
 
 function PowerTab({ analysis, analysisReady }) {
   const bracket = analysis.bracket;
+  const dimensions = bracket.dimensions || {};
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
       <section className={panelClass("p-4 sm:p-5")}>
@@ -764,6 +818,28 @@ function PowerTab({ analysis, analysisReady }) {
           {analysisReady ? bracket.reasons.map((reason) => (
             <StatusLine key={reason} ok={bracket.bracket <= 2}>{reason}</StatusLine>
           )) : <StatusLine ok={false}>Calculating...</StatusLine>}
+        </div>
+      </section>
+
+      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Bracket Dimensions</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {["power", "consistency", "speed", "salt"].map((key) => {
+            const dimension = dimensions[key] || {};
+            return (
+              <details key={key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
+                <summary className="cursor-pointer text-sm font-semibold capitalize text-neutral-100">{key}</summary>
+                <div className="mt-3 space-y-2">
+                  {(dimension.positive || []).map((item) => (
+                    <StatusLine key={item.text} ok={false}>{item.text}</StatusLine>
+                  ))}
+                  {(dimension.negative || []).map((item) => (
+                    <StatusLine key={item.text} ok>{item.text}</StatusLine>
+                  ))}
+                </div>
+              </details>
+            );
+          })}
         </div>
       </section>
 
@@ -854,6 +930,54 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
   );
 }
 
+function CardGroupSections({ analysis, cardMap }) {
+  const typeGroups = analysis.cardGroups?.typeGroups || [];
+  const roleGroups = analysis.cardGroups?.roleGroups || [];
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <section className={panelClass("p-4")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Type Groups</div>
+        <div className="mt-3 space-y-2">
+          {typeGroups.map((group) => (
+            <details key={group.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open={group.count > 0}>
+              <summary className="cursor-pointer text-sm font-semibold text-neutral-100">{group.label} ({group.count})</summary>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {group.cards.length
+                  ? group.cards.map((item) => <CardPreview key={`${group.key}-${item.name}`} card={findCard(cardMap, item.name)} name={item.name} />)
+                  : <span className="text-xs text-neutral-500">No cards detected</span>}
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section className={panelClass("p-4")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Role Evidence Groups</div>
+        <div className="mt-3 space-y-2">
+          {roleGroups.map((group) => (
+            <details key={group.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open={group.count > 0}>
+              <summary className="cursor-pointer text-sm font-semibold text-neutral-100">{group.label} ({group.count})</summary>
+              <div className="mt-3 space-y-2">
+                {group.evidence.length ? group.evidence.map((item, index) => (
+                  <div key={`${item.cardName}-${item.role}-${index}`} className="rounded border border-neutral-800 bg-neutral-900/70 p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CardPreview card={findCard(cardMap, item.cardName)} name={item.cardName} />
+                      <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] uppercase text-neutral-400">{item.confidence}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-neutral-400">{item.reason}</div>
+                    <div className="mt-1 text-[11px] text-neutral-600">{item.source} · {item.matchingRule}</div>
+                  </div>
+                )) : <div className="text-xs text-neutral-500">No evidence detected</div>}
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir, analysisReady }) {
   const [expanded, setExpanded] = useState([]);
   const coreSet = useMemo(() => new Set((coreCards || []).map(normalizeName)), [coreCards]);
@@ -880,6 +1004,8 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
   };
 
   return (
+    <div className="space-y-4">
+    <CardGroupSections analysis={analysis} cardMap={cardMap} />
     <section className={panelClass("overflow-hidden")}>
       <div className="flex flex-col gap-3 border-b border-neutral-800 p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -947,10 +1073,21 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
               </button>
               {isExpanded && (
                 <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                  <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
-                  <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
-                  <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
-                  <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
+                  <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
+                    <div>
+                      {cardPreviewUrl(card) ? (
+                        <img src={cardPreviewUrl(card)} alt={score.name} className="w-full rounded-md border border-neutral-800" loading="lazy" />
+                      ) : (
+                        <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500">No image available</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
+                      <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
+                      <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
+                      <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
+                    </div>
+                  </div>
                 </div>
               )}
             </article>
@@ -1015,7 +1152,14 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                     <tr className="border-t border-neutral-800 bg-neutral-950">
                       <td></td>
                       <td colSpan={5} className="px-4 py-4">
-                        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+                        <div className="grid gap-3 lg:grid-cols-[180px_220px_1fr]">
+                          <div>
+                            {cardPreviewUrl(card) ? (
+                              <img src={cardPreviewUrl(card)} alt={score.name} className="w-full rounded-md border border-neutral-800" loading="lazy" />
+                            ) : (
+                              <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500">No image available</div>
+                            )}
+                          </div>
                           <div>
                             <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                             <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
@@ -1035,6 +1179,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
         </table>
       </div>
     </section>
+    </div>
   );
 }
 

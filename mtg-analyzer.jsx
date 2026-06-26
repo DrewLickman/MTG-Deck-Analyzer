@@ -5,7 +5,7 @@ import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 
 import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatManaSymbols, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
-import { fetchScryfall } from "./lib/scryfall.mjs";
+import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TABS = [
   { id: "scorecard", label: "Scorecard" },
@@ -1107,7 +1107,7 @@ function MobileTabBar({ activeTab, setActiveTab }) {
   );
 }
 
-function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
+function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -1171,6 +1171,12 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
             </div>
           </div>
           <SummaryStrip analysis={analysis} deck={deck} />
+          {cardDataLoading && (
+            <div className="rounded-lg border border-sky-900 bg-sky-950/30 p-3 text-sm text-sky-100">
+              <div className="font-semibold">Scryfall data loading</div>
+              <div className="mt-1 text-sky-200/80">{cardDataProgress || "Fetching card data..."}</div>
+            </div>
+          )}
           {notFound.length > 0 && (
             <div className="rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-100">
               <div className="font-semibold">Unidentified cards</div>
@@ -1231,10 +1237,13 @@ export default function App() {
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
+  const [cardDataLoading, setCardDataLoading] = useState(false);
+  const [cardDataProgress, setCardDataProgress] = useState("");
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("scorecard");
   const lastAutoImportRef = useRef("");
   const importInFlightRef = useRef("");
+  const analysisRunIdRef = useRef(0);
 
   const draftDeck = useMemo(() => {
     if (!deckInput.trim()) return null;
@@ -1242,7 +1251,7 @@ export default function App() {
   }, [deckInput, cmdInput, companionInput]);
 
   const analysis = useMemo(() => {
-    if (!deckModel || !Object.keys(cardMap).length) return null;
+    if (!deckModel) return null;
     const localAnalysis = buildLocalAnalysis(deckModel, cardMap, { analysisSettings, coreCards });
     return mergeAnalysis(remoteAnalysis, localAnalysis);
   }, [deckModel, cardMap, remoteAnalysis, analysisSettings, coreCards]);
@@ -1260,27 +1269,57 @@ export default function App() {
   const analyzeDeckValues = useCallback(async ({ deckText = deckInput, commanderText = cmdInput, companionText = companionInput } = {}) => {
     if (!deckText.trim()) throw new Error("Please paste a decklist.");
 
+    const runId = analysisRunIdRef.current + 1;
+    analysisRunIdRef.current = runId;
     setRemoteAnalysis(null);
     setDeckModel(null);
     setNotFound([]);
+    setCardDataLoading(false);
+    setCardDataProgress("");
 
     const parsedDeck = parseDecklist(deckText, { commanderInput: commanderText, companionInput: companionText });
     if (!parsedDeck.commanders.length) throw new Error("Could not identify a commander.");
     if (!parsedDeck.main.length) throw new Error("No main-deck cards parsed.");
 
     const allNames = deckLookupNames(parsedDeck);
-    const scryfall = await fetchScryfall(allNames, setProgress);
-    const validatedDeck = validateCommandZone(parsedDeck, scryfall.results, findCard, getCardText);
+    const seedResults = seedScryfallResults(allNames);
+    const seededDeck = validateCommandZone(parsedDeck, seedResults, findCard, getCardText);
 
-    setCardMap(scryfall.results);
-    setNotFound(scryfall.notFound);
-    setDeckModel(validatedDeck);
-    setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
-
-    setProgress(`Running deck analysis for ${validatedDeck.cardCount} main-deck cards...`);
-    const remoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
-    setRemoteAnalysis(remoteAnalysis);
+    setCardMap(seedResults);
+    setDeckModel(seededDeck);
+    setCoreCards((current) => current.filter((name) => seededDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
     setActiveTab("scorecard");
+    setSidePanelOpen(false);
+    setCardDataLoading(true);
+    setCardDataProgress(`Loading card data for ${allNames.length} unique cards...`);
+
+    void (async () => {
+      try {
+        const scryfall = await fetchScryfall(allNames, (message) => {
+          if (analysisRunIdRef.current === runId) setCardDataProgress(message);
+        });
+        if (analysisRunIdRef.current !== runId) return;
+
+        const validatedDeck = validateCommandZone(parsedDeck, scryfall.results, findCard, getCardText);
+        setCardMap(scryfall.results);
+        setNotFound(scryfall.notFound);
+        setDeckModel(validatedDeck);
+        setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
+        setCardDataProgress(scryfall.notFound.length
+          ? `Loaded card data with ${scryfall.notFound.length} unmatched card${scryfall.notFound.length === 1 ? "" : "s"}.`
+          : `Loaded card data for ${allNames.length} unique cards.`);
+
+        const nextRemoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
+        if (analysisRunIdRef.current === runId) setRemoteAnalysis(nextRemoteAnalysis);
+      } catch (fetchError) {
+        console.warn("Scryfall enrichment failed:", fetchError);
+        if (analysisRunIdRef.current === runId) {
+          setCardDataProgress("Scryfall card data unavailable; showing preliminary analysis.");
+        }
+      } finally {
+        if (analysisRunIdRef.current === runId) setCardDataLoading(false);
+      }
+    })();
   }, [cmdInput, companionInput, deckInput]);
 
   const importMoxfieldUrl = useCallback(async (inputUrl, options = {}) => {
@@ -1338,12 +1377,37 @@ export default function App() {
   }, [importMoxfieldUrl]);
 
   const handleDeckPaste = useCallback((event) => {
-    const url = extractMoxfieldDeckUrl(event.clipboardData?.getData("text") || "");
-    if (!url) return;
+    const pastedText = event.clipboardData?.getData("text") || "";
+    const url = extractMoxfieldDeckUrl(pastedText);
+    if (url) {
+      event.preventDefault();
+      lastAutoImportRef.current = url;
+      importMoxfieldUrl(url, { auto: true });
+      return;
+    }
+
+    if (!pastedText.trim()) return;
+
+    const target = event.currentTarget;
+    const selectionStart = target.selectionStart ?? deckInput.length;
+    const selectionEnd = target.selectionEnd ?? deckInput.length;
+    const nextDeckText = `${deckInput.slice(0, selectionStart)}${pastedText}${deckInput.slice(selectionEnd)}`;
+
     event.preventDefault();
-    lastAutoImportRef.current = url;
-    importMoxfieldUrl(url, { auto: true });
-  }, [importMoxfieldUrl]);
+    setDeckInput(nextDeckText);
+    setLoading(true);
+    setError(null);
+    setProgress("Importing pasted deck...");
+
+    Promise.resolve(analyzeDeckValues({ deckText: nextDeckText }))
+      .catch((analysisError) => {
+        setError(analysisError.message);
+      })
+      .finally(() => {
+        setLoading(false);
+        setProgress("");
+      });
+  }, [analyzeDeckValues, deckInput, importMoxfieldUrl]);
 
   useEffect(() => {
     const url = extractMoxfieldDeckUrl(moxfieldUrl);
@@ -1403,7 +1467,7 @@ export default function App() {
         setMoxfieldUrl={setMoxfieldUrl}
       />
       {analysis && deckModel
-        ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
+        ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
         : <EmptyWorkspace draftDeck={draftDeck} sidePanelOpen={sidePanelOpen} />}
     </div>
   );

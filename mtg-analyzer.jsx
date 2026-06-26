@@ -344,18 +344,7 @@ function InputPanel(props) {
 }
 
 function EmptyWorkspace({ draftDeck, sidePanelOpen }) {
-  if (!sidePanelOpen) {
-    return (
-      <main className="p-3 sm:p-5 lg:p-8">
-        <div className="mx-auto max-w-6xl">
-          <div className={panelClass("p-5")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Import closed</div>
-            <h2 className="mt-2 text-2xl font-semibold text-neutral-50">Open import & review to confirm deck identity and analyze.</h2>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  if (!sidePanelOpen) return null;
 
   return (
     <main className="p-3 sm:p-5 lg:p-8">
@@ -1268,10 +1257,37 @@ export default function App() {
     });
   };
 
+  const analyzeDeckValues = useCallback(async ({ deckText = deckInput, commanderText = cmdInput, companionText = companionInput } = {}) => {
+    if (!deckText.trim()) throw new Error("Please paste a decklist.");
+
+    setRemoteAnalysis(null);
+    setDeckModel(null);
+    setNotFound([]);
+
+    const parsedDeck = parseDecklist(deckText, { commanderInput: commanderText, companionInput: companionText });
+    if (!parsedDeck.commanders.length) throw new Error("Could not identify a commander.");
+    if (!parsedDeck.main.length) throw new Error("No main-deck cards parsed.");
+
+    const allNames = deckLookupNames(parsedDeck);
+    const scryfall = await fetchScryfall(allNames, setProgress);
+    const validatedDeck = validateCommandZone(parsedDeck, scryfall.results, findCard, getCardText);
+
+    setCardMap(scryfall.results);
+    setNotFound(scryfall.notFound);
+    setDeckModel(validatedDeck);
+    setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
+
+    setProgress(`Running deck analysis for ${validatedDeck.cardCount} main-deck cards...`);
+    const remoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
+    setRemoteAnalysis(remoteAnalysis);
+    setActiveTab("scorecard");
+  }, [cmdInput, companionInput, deckInput]);
+
   const importMoxfieldUrl = useCallback(async (inputUrl, options = {}) => {
     const targetUrl = String(inputUrl || "").trim();
     if (!targetUrl || importInFlightRef.current === targetUrl) return;
     importInFlightRef.current = targetUrl;
+    lastAutoImportRef.current = targetUrl;
     setLoading(true);
     setError(null);
     setMoxfieldUrl(targetUrl);
@@ -1285,10 +1301,20 @@ export default function App() {
         throw new Error(`${data.error || "Moxfield import failed."}${detail}`);
       }
 
-      if (data.commanders?.length) setCmdInput(data.commanders.join(" + "));
-      if (data.companions?.length) setCompanionInput(data.companions[0]);
+      const importedCommanderInput = data.commanders?.length ? data.commanders.join(" + ") : cmdInput;
+      const importedCompanionInput = data.companions?.length ? data.companions[0] : companionInput;
+      const importedDeckText = data.deckText || "";
 
-      setDeckInput(data.deckText || "");
+      if (data.commanders?.length) setCmdInput(importedCommanderInput);
+      if (data.companions?.length) setCompanionInput(importedCompanionInput);
+
+      setDeckInput(importedDeckText);
+      setProgress("Analyzing imported deck...");
+      await analyzeDeckValues({
+        deckText: importedDeckText,
+        commanderText: importedCommanderInput,
+        companionText: importedCompanionInput,
+      });
       setSidePanelOpen(false);
     } catch (importError) {
       setError(importError.message);
@@ -1297,7 +1323,7 @@ export default function App() {
       setLoading(false);
       setProgress("");
     }
-  }, []);
+  }, [analyzeDeckValues, cmdInput, companionInput]);
 
   const handleMoxfieldImport = useCallback(() => {
     return importMoxfieldUrl(moxfieldUrl);
@@ -1330,35 +1356,11 @@ export default function App() {
   }, [importMoxfieldUrl, loading, moxfieldUrl]);
 
   async function runAnalysis() {
-    if (!deckInput.trim()) {
-      setError("Please paste a decklist.");
-      return;
-    }
-
     setLoading(true);
     setError(null);
-    setRemoteAnalysis(null);
-    setDeckModel(null);
-    setNotFound([]);
 
     try {
-      const parsedDeck = parseDecklist(deckInput, { commanderInput: cmdInput, companionInput });
-      if (!parsedDeck.commanders.length) throw new Error("Could not identify a commander.");
-      if (!parsedDeck.main.length) throw new Error("No main-deck cards parsed.");
-
-      const allNames = deckLookupNames(parsedDeck);
-      const scryfall = await fetchScryfall(allNames, setProgress);
-      const validatedDeck = validateCommandZone(parsedDeck, scryfall.results, findCard, getCardText);
-
-      setCardMap(scryfall.results);
-      setNotFound(scryfall.notFound);
-      setDeckModel(validatedDeck);
-      setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
-
-      setProgress(`Running deck analysis for ${validatedDeck.cardCount} main-deck cards...`);
-      const remoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
-      setRemoteAnalysis(remoteAnalysis);
-      setActiveTab("scorecard");
+      await analyzeDeckValues();
     } catch (analysisError) {
       setError(analysisError.message);
     } finally {

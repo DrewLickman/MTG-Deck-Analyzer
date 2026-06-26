@@ -1112,7 +1112,7 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false }) {
 
 function MobileTabBar({ activeTab, setActiveTab }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
       {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} mobile />)}
     </nav>
   );
@@ -1156,7 +1156,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, activeTab, setActiveTab,
   }, [analysis.structure?.manaCurve, analysis.scores, cardMap]);
 
   return (
-    <main className="min-w-0 p-3 pb-24 sm:p-5 sm:pb-24 md:pb-5 lg:p-8">
+    <main className="min-w-0 p-3 pb-32 sm:p-5 sm:pb-32 md:pb-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
         <header className="space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -1368,13 +1368,17 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-neutral-950 text-neutral-100 ${sidePanelOpen ? "lg:grid lg:grid-cols-[380px_minmax(0,1fr)]" : ""}`}>
+    <div className={`relative min-h-screen bg-neutral-950 text-neutral-100 ${sidePanelOpen ? "lg:grid lg:grid-cols-[380px_minmax(0,1fr)]" : ""}`}>
       <button
         type="button"
         onClick={() => setSidePanelOpen((open) => !open)}
-        className="fixed left-2 top-2 z-40 min-h-10 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-neutral-100 shadow-lg hover:border-amber-500"
+        aria-label={sidePanelOpen ? "Close import and review" : "Open import and review"}
+        title={sidePanelOpen ? "Close import and review" : "Open import and review"}
+        className="absolute left-2 top-2 z-40 inline-flex h-10 w-10 flex-col items-center justify-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-lg hover:border-amber-500"
       >
-        {sidePanelOpen ? "Close import & review" : "Open import & review"}
+        <span className="h-0.5 w-5 rounded bg-current" />
+        <span className="h-0.5 w-5 rounded bg-current" />
+        <span className="h-0.5 w-5 rounded bg-current" />
       </button>
       <InputPanel
         cmdInput={cmdInput}

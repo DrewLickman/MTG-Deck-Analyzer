@@ -596,6 +596,48 @@ function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
   );
 }
 
+function CommanderRolePanel({ commanderProfile }) {
+  const commanders = commanderProfile?.commanders || [];
+  return (
+    <section className={panelClass("p-4 sm:p-5")}>
+      <div className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Role</div>
+      <p className="mt-2 text-sm text-neutral-400">{commanderProfile?.summary || "No commander classification available."}</p>
+      <div className="mt-3 space-y-3">
+        {commanders.map((commander) => (
+          <div key={commander.name} className={`rounded-lg border p-3 ${commander.outlier ? "border-amber-900 bg-amber-950/30" : "border-neutral-800 bg-neutral-950"}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="font-semibold text-neutral-100">{commander.name}</div>
+                <div className="mt-1 text-sm text-amber-200">{commander.category}</div>
+              </div>
+              <span className={`rounded border px-2 py-0.5 text-[11px] uppercase ${commander.confidence === "high" ? "border-emerald-800 text-emerald-200" : commander.confidence === "medium" ? "border-amber-800 text-amber-200" : "border-rose-800 text-rose-200"}`}>
+                {commander.confidence}
+              </span>
+            </div>
+            {commander.outlier && <div className="mt-2 text-xs text-amber-200">Low-confidence classification</div>}
+            <p className="mt-2 text-sm text-neutral-300">{commander.explanation}</p>
+            {commander.alternateCategories?.length > 0 && (
+              <div className="mt-2 text-xs text-neutral-500">Also plausible: {commander.alternateCategories.join(", ")}</div>
+            )}
+            <div className="mt-3 space-y-2">
+              {(commander.evidence || []).map((item) => (
+                <div key={item.text} className="rounded border border-neutral-800 bg-neutral-900/70 p-2">
+                  <div className="text-xs text-neutral-300">{item.text}</div>
+                  {item.cards?.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {item.cards.map((card) => <RoleChip key={card} role={card} />)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function OverviewTab({ analysis, deck }) {
   const winPlan = analysis.structure?.winPlan;
   return (
@@ -644,6 +686,8 @@ function OverviewTab({ analysis, deck }) {
           ))}
         </div>
       </section>
+
+      <CommanderRolePanel commanderProfile={analysis.commanderProfile} />
 
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Identity</div>
@@ -1233,7 +1277,7 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
     <section className={panelClass("p-4 sm:p-5")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Debug</div>
       <pre className="mt-3 max-h-[640px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">
-        {JSON.stringify({ deck, scorecard: analysis.scorecard, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
+        {JSON.stringify({ deck, commanderProfile: analysis.commanderProfile, scorecard: analysis.scorecard, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
       </pre>
     </section>
   );

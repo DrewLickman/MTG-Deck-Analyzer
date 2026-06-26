@@ -32,3 +32,13 @@ test("mana costs render with project mana icon assets", () => {
   assert.match(source, /\/mana\/\$\{upper\.toLowerCase\(\)\}\.svg/);
   assert.match(source, /alt=\{`\{\$\{token\}\}`\}/);
 });
+
+test("overview renders commander role classification details", () => {
+  assert.match(source, /function CommanderRolePanel/);
+  assert.match(source, /Commander Role/);
+  assert.match(source, /commander\.category/);
+  assert.match(source, /commander\.confidence/);
+  assert.match(source, /Low-confidence classification/);
+  assert.match(source, /commander\.evidence/);
+  assert.match(source, /alternateCategories/);
+});

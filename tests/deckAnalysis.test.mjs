@@ -148,6 +148,157 @@ Deck:
   assert.equal(commanderBand.label, "Commander Turn");
 });
 
+test("commander profile classifies clear commander roles", () => {
+  const enablerDeck = parseDecklist(`
+Commander:
+1 Artifact Animator
+
+Deck:
+1 Mana Rock
+1 Vehicle Shell
+1 Artifact Payoff
+`);
+  const enablerMap = {
+    "Artifact Animator": card("Artifact Animator", { type_line: "Legendary Creature", oracle_text: "Target noncreature artifact becomes an artifact creature until end of turn. {T}: Add one mana of any color." }),
+    "Mana Rock": card("Mana Rock", { type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Vehicle Shell": card("Vehicle Shell", { type_line: "Artifact - Vehicle", oracle_text: "Crew 2." }),
+    "Artifact Payoff": card("Artifact Payoff", { type_line: "Artifact", oracle_text: "Whenever an artifact enters, draw a card." }),
+  };
+
+  const linchpinDeck = parseDecklist(`
+Commander:
+1 Spell Engine
+
+Deck:
+1 Cantrip One
+1 Cantrip Two
+1 Cantrip Three
+1 Cantrip Four
+1 Cantrip Five
+1 Cantrip Six
+`);
+  const linchpinMap = {
+    "Spell Engine": card("Spell Engine", { type_line: "Legendary Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a token." }),
+    "Cantrip One": card("Cantrip One", { type_line: "Instant", oracle_text: "Draw a card." }),
+    "Cantrip Two": card("Cantrip Two", { type_line: "Sorcery", oracle_text: "Draw a card." }),
+    "Cantrip Three": card("Cantrip Three", { type_line: "Instant", oracle_text: "Scry 1." }),
+    "Cantrip Four": card("Cantrip Four", { type_line: "Sorcery", oracle_text: "Create a token." }),
+    "Cantrip Five": card("Cantrip Five", { type_line: "Instant", oracle_text: "Copy target spell." }),
+    "Cantrip Six": card("Cantrip Six", { type_line: "Sorcery", oracle_text: "Return target instant from your graveyard." }),
+  };
+
+  const intensifierDeck = parseDecklist(`
+Commander:
+1 Combat Booster
+
+Deck:
+1 Sol Ring
+1 Removal Spell
+`);
+  const intensifierMap = {
+    "Combat Booster": card("Combat Booster", { cmc: 5, type_line: "Legendary Creature", oracle_text: "Whenever a creature attacks, draw a card. Creatures you control get +1/+1." }),
+    "Sol Ring": card("Sol Ring", { cmc: 1, type_line: "Artifact", oracle_text: "{T}: Add {C}{C}." }),
+    "Removal Spell": card("Removal Spell", { type_line: "Instant", oracle_text: "Destroy target creature." }),
+  };
+
+  const counterweightDeck = parseDecklist(`
+Commander:
+1 Safety Valve
+
+Deck:
+1 Tax Piece
+1 Tap Piece
+`);
+  const counterweightMap = {
+    "Safety Valve": card("Safety Valve", { type_line: "Legendary Creature", oracle_text: "Opponents can't cast spells during your turn. Ward {2}." }),
+    "Tax Piece": card("Tax Piece", { type_line: "Artifact", oracle_text: "Spells your opponents cast cost {1} more to cast." }),
+    "Tap Piece": card("Tap Piece", { type_line: "Artifact", oracle_text: "Creatures your opponents control enter the battlefield tapped." }),
+  };
+
+  assert.equal(buildLocalAnalysis(enablerDeck, enablerMap).commanderProfile.commanders[0].category, "Enabler");
+  assert.equal(buildLocalAnalysis(linchpinDeck, linchpinMap).commanderProfile.commanders[0].category, "Linchpin");
+  assert.equal(buildLocalAnalysis(intensifierDeck, intensifierMap).commanderProfile.commanders[0].category, "Intensifier");
+  assert.equal(buildLocalAnalysis(counterweightDeck, counterweightMap).commanderProfile.commanders[0].category, "Counterweight");
+});
+
+test("partner commanders receive separate commander role classifications", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Artifact Animator
+1 Combat Booster
+
+Deck:
+1 Mana Rock
+1 Vehicle Shell
+1 Removal Spell
+`);
+  const cardMap = {
+    "Artifact Animator": card("Artifact Animator", { type_line: "Legendary Creature", oracle_text: "Target noncreature artifact becomes an artifact creature until end of turn. {T}: Add one mana of any color." }),
+    "Combat Booster": card("Combat Booster", { cmc: 5, type_line: "Legendary Creature", oracle_text: "Whenever a creature attacks, draw a card. Creatures you control get +1/+1." }),
+    "Mana Rock": card("Mana Rock", { type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Vehicle Shell": card("Vehicle Shell", { type_line: "Artifact - Vehicle", oracle_text: "Crew 2." }),
+    "Removal Spell": card("Removal Spell", { type_line: "Instant", oracle_text: "Destroy target creature." }),
+  };
+
+  const profile = buildLocalAnalysis(deck, cardMap).commanderProfile;
+  const byName = Object.fromEntries(profile.commanders.map((commander) => [commander.name, commander.category]));
+
+  assert.equal(profile.commanders.length, 2);
+  assert.equal(byName["Artifact Animator"], "Enabler");
+  assert.equal(byName["Combat Booster"], "Intensifier");
+  assert.match(profile.summary, /split roles/);
+});
+
+test("commander profile flags low-confidence outliers with alternate categories", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Discount Engine
+
+Deck:
+1 Cantrip One
+1 Cantrip Two
+1 Cantrip Three
+`);
+  const cardMap = {
+    "Discount Engine": card("Discount Engine", { type_line: "Legendary Creature", oracle_text: "Instant and sorcery spells you cast cost {1} less. Whenever you cast an instant or sorcery spell, draw a card." }),
+    "Cantrip One": card("Cantrip One", { type_line: "Instant", oracle_text: "Draw a card." }),
+    "Cantrip Two": card("Cantrip Two", { type_line: "Sorcery", oracle_text: "Draw a card." }),
+    "Cantrip Three": card("Cantrip Three", { type_line: "Instant", oracle_text: "Scry 1." }),
+  };
+
+  const commander = buildLocalAnalysis(deck, cardMap).commanderProfile.commanders[0];
+
+  assert.equal(commander.category, "Enabler");
+  assert.equal(commander.confidence, "low");
+  assert.equal(commander.outlier, true);
+  assert.ok(commander.alternateCategories.includes("Intensifier"));
+});
+
+test("selected core cards can shift commander classification toward linchpin", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Artifact Draw Engine
+
+Deck:
+1 Artifact Core One
+1 Artifact Core Two
+1 Generic Artifact
+`);
+  const cardMap = {
+    "Artifact Draw Engine": card("Artifact Draw Engine", { type_line: "Legendary Creature", oracle_text: "Whenever you cast an artifact spell, draw a card." }),
+    "Artifact Core One": card("Artifact Core One", { type_line: "Artifact", oracle_text: "Whenever an artifact enters, create a token." }),
+    "Artifact Core Two": card("Artifact Core Two", { type_line: "Artifact", oracle_text: "Sacrifice an artifact: draw a card." }),
+    "Generic Artifact": card("Generic Artifact", { type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+  };
+
+  const withoutCore = buildLocalAnalysis(deck, cardMap).commanderProfile.commanders[0];
+  const withCore = buildLocalAnalysis(deck, cardMap, { coreCards: ["Artifact Core One", "Artifact Core Two"] }).commanderProfile.commanders[0];
+
+  assert.equal(withoutCore.category, "Intensifier");
+  assert.equal(withCore.category, "Linchpin");
+  assert.ok(withCore.evidence.some((item) => item.text.includes("Selected core cards")));
+});
+
 test("ignored settings remove their category from overall score", () => {
   const deck = parseDecklist(`
 Commander:

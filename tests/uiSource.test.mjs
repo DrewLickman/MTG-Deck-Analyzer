@@ -35,9 +35,14 @@ test("mana costs render with project mana icon assets", () => {
 
 test("overview renders commander role classification details", () => {
   assert.match(source, /function CommanderRolePanel/);
+  assert.match(source, /function CommanderRoleGraph/);
+  assert.match(source, /COMMANDER_ROLE_POINTS/);
   assert.match(source, /Commander Role/);
   assert.match(source, /commander\.category/);
   assert.match(source, /commander\.confidence/);
+  assert.match(source, /commander\.categoryScores/);
+  assert.match(source, /confidenceScore/);
+  assert.match(source, /Quadratic confidence center/);
   assert.match(source, /Low-confidence classification/);
   assert.match(source, /commander\.evidence/);
   assert.match(source, /alternateCategories/);

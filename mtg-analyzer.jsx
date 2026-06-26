@@ -596,6 +596,66 @@ function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
   );
 }
 
+const COMMANDER_ROLE_POINTS = {
+  Enabler: { x: 22, y: 24 },
+  Linchpin: { x: 78, y: 24 },
+  Intensifier: { x: 78, y: 76 },
+  Counterweight: { x: 22, y: 76 },
+};
+
+function CommanderRoleGraph({ commander }) {
+  const scores = commander.categoryScores || [];
+  const total = scores.reduce((sum, item) => sum + item.confidenceScore, 0) || 1;
+  const centroid = scores.reduce((point, item) => {
+    const rolePoint = COMMANDER_ROLE_POINTS[item.category] || { x: 50, y: 50 };
+    return {
+      x: point.x + rolePoint.x * (item.confidenceScore / total),
+      y: point.y + rolePoint.y * (item.confidenceScore / total),
+    };
+  }, { x: 0, y: 0 });
+
+  return (
+    <div className="mt-3">
+      <div className="relative h-48 rounded-lg border border-neutral-800 bg-neutral-950">
+        <div className="absolute left-1/2 top-3 bottom-3 w-px bg-neutral-800" />
+        <div className="absolute left-3 right-3 top-1/2 h-px bg-neutral-800" />
+        {scores.map((item) => {
+          const point = COMMANDER_ROLE_POINTS[item.category] || { x: 50, y: 50 };
+          const size = 18 + item.confidenceScore * 0.34;
+          const active = item.category === commander.category;
+          return (
+            <div
+              key={item.category}
+              className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-[11px] font-semibold ${active ? "border-amber-300 bg-amber-400 text-neutral-950" : "border-neutral-700 bg-neutral-900 text-neutral-300"}`}
+              style={{ left: `${point.x}%`, top: `${point.y}%`, width: `${size}px`, height: `${size}px`, opacity: 0.45 + item.confidenceScore / 180 }}
+              title={`${item.category}: ${item.confidenceScore}%`}
+            >
+              {item.confidenceScore}
+            </div>
+          );
+        })}
+        <div
+          className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-neutral-950 bg-sky-300 shadow-[0_0_0_2px_rgba(125,211,252,0.4)]"
+          style={{ left: `${centroid.x}%`, top: `${centroid.y}%` }}
+          title="Quadratic confidence center"
+        />
+        <div className="absolute left-3 top-2 text-[11px] text-neutral-500">Enabler</div>
+        <div className="absolute right-3 top-2 text-[11px] text-neutral-500">Linchpin</div>
+        <div className="absolute bottom-2 right-3 text-[11px] text-neutral-500">Intensifier</div>
+        <div className="absolute bottom-2 left-3 text-[11px] text-neutral-500">Counterweight</div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-neutral-500">
+        {scores.map((item) => (
+          <div key={item.category} className="flex justify-between gap-2">
+            <span>{item.category}</span>
+            <span className="font-mono">{item.confidenceScore}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CommanderRolePanel({ commanderProfile }) {
   const commanders = commanderProfile?.commanders || [];
   return (
@@ -619,6 +679,7 @@ function CommanderRolePanel({ commanderProfile }) {
             {commander.alternateCategories?.length > 0 && (
               <div className="mt-2 text-xs text-neutral-500">Also plausible: {commander.alternateCategories.join(", ")}</div>
             )}
+            <CommanderRoleGraph commander={commander} />
             <div className="mt-3 space-y-2">
               {(commander.evidence || []).map((item) => (
                 <div key={item.text} className="rounded border border-neutral-800 bg-neutral-900/70 p-2">

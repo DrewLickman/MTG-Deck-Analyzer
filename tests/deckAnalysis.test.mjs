@@ -217,8 +217,39 @@ Deck:
 
   assert.equal(buildLocalAnalysis(enablerDeck, enablerMap).commanderProfile.commanders[0].category, "Enabler");
   assert.equal(buildLocalAnalysis(linchpinDeck, linchpinMap).commanderProfile.commanders[0].category, "Linchpin");
-  assert.equal(buildLocalAnalysis(intensifierDeck, intensifierMap).commanderProfile.commanders[0].category, "Intensifier");
+  const intensifier = buildLocalAnalysis(intensifierDeck, intensifierMap).commanderProfile.commanders[0];
+  assert.equal(intensifier.category, "Intensifier");
+  assert.equal(intensifier.categoryScores.length, 4);
+  assert.ok(intensifier.categoryScores.every((item) => typeof item.confidenceScore === "number"));
   assert.equal(buildLocalAnalysis(counterweightDeck, counterweightMap).commanderProfile.commanders[0].category, "Counterweight");
+});
+
+test("multiplication and making numbers bigger strongly indicates intensifier", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Neriv, Heart of the Storm
+
+Deck:
+1 Hasty Attacker
+1 Token Maker
+1 Combat Trick
+1 Damage Payoff
+`);
+  const cardMap = {
+    "Neriv, Heart of the Storm": card("Neriv, Heart of the Storm", { type_line: "Legendary Creature", oracle_text: "If a creature you control that entered this turn would deal damage, it deals twice that much damage instead." }),
+    "Hasty Attacker": card("Hasty Attacker", { type_line: "Creature", oracle_text: "Haste." }),
+    "Token Maker": card("Token Maker", { type_line: "Sorcery", oracle_text: "Create two creature tokens." }),
+    "Combat Trick": card("Combat Trick", { type_line: "Instant", oracle_text: "Target creature gets +2/+2 until end of turn." }),
+    "Damage Payoff": card("Damage Payoff", { type_line: "Enchantment", oracle_text: "Whenever a creature deals combat damage, draw a card." }),
+  };
+
+  const commander = buildLocalAnalysis(deck, cardMap).commanderProfile.commanders[0];
+  const intensifierScore = commander.categoryScores.find((item) => item.category === "Intensifier");
+  const linchpinScore = commander.categoryScores.find((item) => item.category === "Linchpin");
+
+  assert.equal(commander.category, "Intensifier");
+  assert.ok(intensifierScore.confidenceScore > linchpinScore.confidenceScore);
+  assert.ok(commander.evidence.some((item) => item.text.includes("multiplies output")));
 });
 
 test("partner commanders receive separate commander role classifications", () => {

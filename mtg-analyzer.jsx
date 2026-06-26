@@ -68,6 +68,8 @@ function panelClass(extra = "") {
 }
 
 function Metric({ label, value, tone = "neutral", sub }) {
+  const displayValue = value ?? "-";
+  const compactValue = String(displayValue).length > 8;
   const toneClass = {
     neutral: "border-neutral-800 bg-neutral-900",
     good: "border-emerald-900 bg-emerald-950/40",
@@ -78,7 +80,7 @@ function Metric({ label, value, tone = "neutral", sub }) {
   return (
     <div className={`rounded-lg border px-3 py-2 ${toneClass}`}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="mt-1 text-lg font-semibold leading-tight text-neutral-50 sm:text-xl">{value ?? "-"}</div>
+      <div className={`mt-1 font-semibold leading-tight text-neutral-50 ${compactValue ? "text-sm sm:text-base" : "text-lg sm:text-xl"}`}>{displayValue}</div>
       {sub && <div className="mt-0.5 text-xs text-neutral-500">{sub}</div>}
     </div>
   );
@@ -124,6 +126,10 @@ function toneForScore(score) {
 
 function settingValue(settings, key) {
   return settings?.[key] ?? DEFAULT_ANALYSIS_SETTINGS[key];
+}
+
+function calculationValue(ready, value) {
+  return ready ? (value ?? "-") : "Calculating...";
 }
 
 function FindingCard({ finding }) {
@@ -363,21 +369,21 @@ function EmptyWorkspace({ draftDeck, sidePanelOpen }) {
   );
 }
 
-function SummaryStrip({ analysis, deck }) {
+function SummaryStrip({ analysis, deck, analysisReady }) {
   const bracket = analysis.bracket;
   const urgentFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity === "critical" || finding.severity === "warning").length;
   const score = (key) => analysis.scorecard?.find((item) => item.key === key);
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4 xl:grid-cols-9">
-      <Metric label="Overall" value={analysis.overallScore ?? "-"} sub="Score" tone={toneForScore(analysis.overallScore || 0)} />
-      <Metric label="Bracket" value={bracket?.rangeLabel || "-"} sub={bracket?.label} tone={bracket?.bracket >= 4 ? "bad" : bracket?.bracket === 3 ? "warn" : "good"} />
-      <Metric label="Lands" value={analysis.stats?.landCount} tone={analysis.stats?.landCount >= 36 && analysis.stats?.landCount <= 40 ? "good" : "warn"} />
-      <Metric label="Ramp" value={analysis.stats?.rampCount} tone={analysis.stats?.rampCount >= 8 ? "good" : "bad"} />
-      <Metric label="Flow" value={analysis.structure?.cardFlowProfile?.total ?? "-"} tone={analysis.structure?.cardFlowProfile?.status === "good" ? "good" : analysis.structure?.cardFlowProfile?.status === "bad" ? "bad" : "warn"} />
-      <Metric label="Removal" value={analysis.stats?.removalCount} tone={analysis.stats?.removalCount >= 3 ? "good" : "warn"} />
-      <Metric label="Core Syn" value={score("synergy")?.score ?? "-"} tone={toneForScore(score("synergy")?.score || 0)} />
-      <Metric label="Win Plan" value={score("winPlan")?.score ?? "-"} tone={toneForScore(score("winPlan")?.score || 0)} />
-      <Metric label="Findings" value={urgentFindings} tone={urgentFindings ? "warn" : "good"} sub="Urgent" />
+      <Metric label="Overall" value={calculationValue(analysisReady, analysis.overallScore)} sub={analysisReady ? "Score" : "Loading"} tone={analysisReady ? toneForScore(analysis.overallScore || 0) : "neutral"} />
+      <Metric label="Bracket" value={calculationValue(analysisReady, bracket?.rangeLabel)} sub={analysisReady ? bracket?.label : "Loading"} tone={analysisReady ? (bracket?.bracket >= 4 ? "bad" : bracket?.bracket === 3 ? "warn" : "good") : "neutral"} />
+      <Metric label="Lands" value={calculationValue(analysisReady, analysis.stats?.landCount)} tone={analysisReady ? (analysis.stats?.landCount >= 36 && analysis.stats?.landCount <= 40 ? "good" : "warn") : "neutral"} />
+      <Metric label="Ramp" value={calculationValue(analysisReady, analysis.stats?.rampCount)} tone={analysisReady ? (analysis.stats?.rampCount >= 8 ? "good" : "bad") : "neutral"} />
+      <Metric label="Flow" value={calculationValue(analysisReady, analysis.structure?.cardFlowProfile?.total)} tone={analysisReady ? (analysis.structure?.cardFlowProfile?.status === "good" ? "good" : analysis.structure?.cardFlowProfile?.status === "bad" ? "bad" : "warn") : "neutral"} />
+      <Metric label="Removal" value={calculationValue(analysisReady, analysis.stats?.removalCount)} tone={analysisReady ? (analysis.stats?.removalCount >= 3 ? "good" : "warn") : "neutral"} />
+      <Metric label="Core Syn" value={calculationValue(analysisReady, score("synergy")?.score)} tone={analysisReady ? toneForScore(score("synergy")?.score || 0) : "neutral"} />
+      <Metric label="Win Plan" value={calculationValue(analysisReady, score("winPlan")?.score)} tone={analysisReady ? toneForScore(score("winPlan")?.score || 0) : "neutral"} />
+      <Metric label="Findings" value={calculationValue(analysisReady, urgentFindings)} tone={analysisReady ? (urgentFindings ? "warn" : "good") : "neutral"} sub={analysisReady ? "Urgent" : "Loading"} />
     </div>
   );
 }
@@ -468,15 +474,17 @@ function SettingsPanel({ settings, setSettings }) {
   );
 }
 
-function ScorecardPanel({ item }) {
+function ScorecardPanel({ item, analysisReady }) {
   return (
     <article className={`rounded-lg border p-4 ${statusClasses(item.status)}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{item.label}</div>
-          <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{item.ignored ? "Ignored in overall score" : item.grade}</div>
+          <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{analysisReady ? (item.ignored ? "Ignored in overall score" : item.grade) : "Calculating"}</div>
         </div>
-        <div className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-lg text-neutral-100">{item.score}</div>
+        <div className={`rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-neutral-100 ${analysisReady ? "text-lg" : "text-xs"}`}>
+          {calculationValue(analysisReady, item.score)}
+        </div>
       </div>
       <p className="mt-3 text-sm leading-6 text-neutral-300">{item.summary}</p>
       <div className="mt-3">
@@ -500,13 +508,13 @@ function ScorecardPanel({ item }) {
   );
 }
 
-function ScorecardTab({ analysis, settings, setSettings }) {
+function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
   return (
     <div className="space-y-3 sm:space-y-4">
       <section className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <div className={panelClass("p-4 sm:p-5")}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Overall Score</div>
-          <div className="mt-2 text-5xl font-bold text-neutral-50">{analysis.overallScore ?? "-"}</div>
+          <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-5xl" : "text-3xl"}`}>{calculationValue(analysisReady, analysis.overallScore)}</div>
           <div className="mt-3 text-sm text-neutral-400">Local score based on your current slider targets, commander, and core identity cards.</div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
@@ -514,23 +522,23 @@ function ScorecardTab({ analysis, settings, setSettings }) {
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
             <div className="mt-3 space-y-2">
               {(analysis.highlights?.needsAttention || []).map((item) => (
-                <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                  <span className="text-sm text-neutral-200">{item.label}</span>
-                  <span className={`font-mono text-sm ${scoreColor(Math.round((item.score - 50) / 10))}`}>{item.score}</span>
-                </div>
-              ))}
-            </div>
+                  <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                    <span className="text-sm text-neutral-200">{item.label}</span>
+                    <span className={`font-mono text-sm ${analysisReady ? scoreColor(Math.round((item.score - 50) / 10)) : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
+                  </div>
+                ))}
+              </div>
           </div>
           <div className={panelClass("p-4")}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strengths</div>
             <div className="mt-3 space-y-2">
               {(analysis.highlights?.strengths || []).map((item) => (
-                <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                  <span className="text-sm text-neutral-200">{item.label}</span>
-                  <span className="font-mono text-sm text-emerald-300">{item.score}</span>
-                </div>
-              ))}
-            </div>
+                  <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                    <span className="text-sm text-neutral-200">{item.label}</span>
+                    <span className={`font-mono text-sm ${analysisReady ? "text-emerald-300" : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
+                  </div>
+                ))}
+              </div>
           </div>
         </div>
       </section>
@@ -538,7 +546,7 @@ function ScorecardTab({ analysis, settings, setSettings }) {
       <SettingsPanel settings={settings} setSettings={setSettings} />
 
       <section className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-        {(analysis.scorecard || []).map((item) => <ScorecardPanel key={item.key} item={item} />)}
+        {(analysis.scorecard || []).map((item) => <ScorecardPanel key={item.key} item={item} analysisReady={analysisReady} />)}
       </section>
     </div>
   );
@@ -736,26 +744,26 @@ function StructureTab({ analysis }) {
   );
 }
 
-function PowerTab({ analysis }) {
+function PowerTab({ analysis, analysisReady }) {
   const bracket = analysis.bracket;
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Bracket</div>
-        <div className="mt-2 text-3xl font-bold text-neutral-50 sm:text-4xl">{bracket.rangeLabel}</div>
-        <div className="mt-1 text-sm text-neutral-400">{bracket.label} confidence {Math.round(bracket.confidence * 100)}%</div>
+        <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"}`}>{calculationValue(analysisReady, bracket.rangeLabel)}</div>
+        <div className="mt-1 text-sm text-neutral-400">{analysisReady ? `${bracket.label} confidence ${Math.round(bracket.confidence * 100)}%` : "Calculating..."}</div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Metric label="Win Turn" value={`~${bracket.expectedWinTurn}`} />
-          <Metric label="Game Changers" value={bracket.gameChangers.length} tone={bracket.gameChangers.length > 3 ? "bad" : bracket.gameChangers.length ? "warn" : "good"} />
+          <Metric label="Win Turn" value={calculationValue(analysisReady, `~${bracket.expectedWinTurn}`)} />
+          <Metric label="Game Changers" value={calculationValue(analysisReady, bracket.gameChangers.length)} tone={analysisReady ? (bracket.gameChangers.length > 3 ? "bad" : bracket.gameChangers.length ? "warn" : "good") : "neutral"} />
         </div>
       </section>
 
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Evidence</div>
         <div className="mt-3 space-y-2">
-          {bracket.reasons.map((reason) => (
+          {analysisReady ? bracket.reasons.map((reason) => (
             <StatusLine key={reason} ok={bracket.bracket <= 2}>{reason}</StatusLine>
-          ))}
+          )) : <StatusLine ok={false}>Calculating...</StatusLine>}
         </div>
       </section>
 
@@ -765,14 +773,14 @@ function PowerTab({ analysis }) {
           <details className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
             <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Game Changers</summary>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {bracket.gameChangers.length ? bracket.gameChangers.map((name) => <RoleChip key={name} role={name} />) : <span className="text-sm text-neutral-500">None detected</span>}
+              {analysisReady ? (bracket.gameChangers.length ? bracket.gameChangers.map((name) => <RoleChip key={name} role={name} />) : <span className="text-sm text-neutral-500">None detected</span>) : <span className="text-sm text-neutral-500">Calculating...</span>}
             </div>
             <div className="mt-2 text-xs text-neutral-600">{bracket.gameChangerVersion}</div>
           </details>
           <details className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
             <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Speed</summary>
             <div className="mt-3 space-y-1 text-sm text-neutral-400">
-              {bracket.speedSignals.length ? bracket.speedSignals.map((signal) => <div key={`${signal.type}-${signal.name}`}>{signal.type}: {signal.name}</div>) : <div>No fast speed cluster detected.</div>}
+              {analysisReady ? (bracket.speedSignals.length ? bracket.speedSignals.map((signal) => <div key={`${signal.type}-${signal.name}`}>{signal.type}: {signal.name}</div>) : <div>No fast speed cluster detected.</div>) : <div>Calculating...</div>}
             </div>
           </details>
         </div>
@@ -781,13 +789,13 @@ function PowerTab({ analysis }) {
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Combo Packages</div>
         <div className="mt-3 space-y-3">
-          {bracket.comboSignals.length ? bracket.comboSignals.map((combo) => (
+          {!analysisReady ? <div className="text-sm text-neutral-500">Calculating...</div> : bracket.comboSignals.length ? bracket.comboSignals.map((combo) => (
             <details key={combo.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
               <summary className="cursor-pointer text-sm font-semibold text-neutral-200">{combo.name}</summary>
               <div className="mt-2 text-sm text-neutral-400">{combo.matches.join(", ")}</div>
             </details>
           )) : <div className="text-sm text-neutral-500">No compact combo package detected.</div>}
-          {bracket.upgradeSuggestions.map((suggestion) => (
+          {analysisReady && bracket.upgradeSuggestions.map((suggestion) => (
             <StatusLine key={suggestion} ok={bracket.bracket <= 3}>{suggestion}</StatusLine>
           ))}
         </div>
@@ -846,7 +854,7 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
   );
 }
 
-function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir }) {
+function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir, analysisReady }) {
   const [expanded, setExpanded] = useState([]);
   const coreSet = useMemo(() => new Set((coreCards || []).map(normalizeName)), [coreCards]);
   const expandedSet = useMemo(() => new Set(expanded), [expanded]);
@@ -919,8 +927,8 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                     </div>
                     <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {score.note || "No special signal"}</div>
                   </div>
-                  <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${scoreColor(score.score)}`}>
-                    {score.score > 0 ? "+" : ""}{score.score}
+                  <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${analysisReady ? scoreColor(score.score) : "text-neutral-400"}`}>
+                    {analysisReady ? `${score.score > 0 ? "+" : ""}${score.score}` : "Calculating..."}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1">
@@ -994,7 +1002,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                         </button>
                       </div>
                     </td>
-                    <td className={`px-4 py-3 font-mono ${scoreColor(score.score)}`}>{score.score > 0 ? "+" : ""}{score.score}</td>
+                    <td className={`px-4 py-3 font-mono ${analysisReady ? scoreColor(score.score) : "text-neutral-400"}`}>{analysisReady ? `${score.score > 0 ? "+" : ""}${score.score}` : "Calculating..."}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {roles.map((role) => <RoleChip key={role} role={role} />)}
@@ -1030,7 +1038,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
   );
 }
 
-function UpgradesTab({ analysis }) {
+function UpgradesTab({ analysis, analysisReady }) {
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
       <section className={panelClass("p-4 sm:p-5")}>
@@ -1039,11 +1047,11 @@ function UpgradesTab({ analysis }) {
           {analysis.upgrades.map((upgrade) => (
             <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <div>
-                  <div className="text-xs text-neutral-500">Cut</div>
-                  <div className="font-semibold text-rose-200">{upgrade.cut}</div>
-                  <div className={`text-xs font-mono ${scoreColor(upgrade.cutScore)}`}>{upgrade.cutScore > 0 ? "+" : ""}{upgrade.cutScore}</div>
-                </div>
+                  <div>
+                    <div className="text-xs text-neutral-500">Cut</div>
+                    <div className="font-semibold text-rose-200">{upgrade.cut}</div>
+                    <div className={`text-xs font-mono ${analysisReady ? scoreColor(upgrade.cutScore) : "text-neutral-400"}`}>{analysisReady ? `${upgrade.cutScore > 0 ? "+" : ""}${upgrade.cutScore}` : "Calculating..."}</div>
+                  </div>
                 <div className="text-neutral-600">to</div>
                 <div>
                   <div className="text-xs text-neutral-500">Add</div>
@@ -1107,10 +1115,20 @@ function MobileTabBar({ activeTab, setActiveTab }) {
   );
 }
 
+function CalculatingAnalysisPanel() {
+  return (
+    <section className={panelClass("p-5 sm:p-6")}>
+      <div className="text-[11px] uppercase tracking-wide text-neutral-500">Analysis</div>
+      <div className="mt-2 text-2xl font-bold text-neutral-50">Calculating...</div>
+    </section>
+  );
+}
+
 function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
+  const analysisReady = !cardDataLoading;
 
   const pipData = useMemo(() => {
     const total = Object.values(analysis.colorPips || {}).reduce((sum, value) => sum + value, 0) || 1;
@@ -1170,7 +1188,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
               )}
             </div>
           </div>
-          <SummaryStrip analysis={analysis} deck={deck} />
+          <SummaryStrip analysis={analysis} deck={deck} analysisReady={analysisReady} />
           {cardDataLoading && (
             <div className="rounded-lg border border-sky-900 bg-sky-950/30 p-3 text-sm text-sky-100">
               <div className="font-semibold">Scryfall data loading</div>
@@ -1196,27 +1214,34 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
           ))}
         </nav>
 
-        {activeTab === "scorecard" && <ScorecardTab analysis={analysis} settings={analysisSettings} setSettings={setAnalysisSettings} />}
-        {activeTab === "overview" && <OverviewTab analysis={analysis} deck={deck} />}
-        {activeTab === "structure" && <StructureTab analysis={analysis} />}
-        {activeTab === "power" && <PowerTab analysis={analysis} />}
-        {activeTab === "mana" && <ManaTab analysis={analysis} pipData={pipData} cmcBuckets={cmcBuckets} />}
-        {activeTab === "cards" && (
-          <CardsTab
-            analysis={analysis}
-            cardMap={cardMap}
-            coreCards={coreCards}
-            toggleCoreCard={toggleCoreCard}
-            roleFilter={roleFilter}
-            setRoleFilter={setRoleFilter}
-            sortCol={sortCol}
-            sortDir={sortDir}
-            setSortCol={setSortCol}
-            setSortDir={setSortDir}
-          />
+        {!analysisReady ? (
+          <CalculatingAnalysisPanel />
+        ) : (
+          <>
+            {activeTab === "scorecard" && <ScorecardTab analysis={analysis} settings={analysisSettings} setSettings={setAnalysisSettings} analysisReady={analysisReady} />}
+            {activeTab === "overview" && <OverviewTab analysis={analysis} deck={deck} />}
+            {activeTab === "structure" && <StructureTab analysis={analysis} />}
+            {activeTab === "power" && <PowerTab analysis={analysis} analysisReady={analysisReady} />}
+            {activeTab === "mana" && <ManaTab analysis={analysis} pipData={pipData} cmcBuckets={cmcBuckets} />}
+            {activeTab === "cards" && (
+              <CardsTab
+                analysis={analysis}
+                cardMap={cardMap}
+                coreCards={coreCards}
+                toggleCoreCard={toggleCoreCard}
+                roleFilter={roleFilter}
+                setRoleFilter={setRoleFilter}
+                sortCol={sortCol}
+                sortDir={sortDir}
+                setSortCol={setSortCol}
+                setSortDir={setSortDir}
+                analysisReady={analysisReady}
+              />
+            )}
+            {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} />}
+            {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
+          </>
         )}
-        {activeTab === "upgrades" && <UpgradesTab analysis={analysis} />}
-        {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
       </div>
       <MobileTabBar activeTab={activeTab} setActiveTab={setActiveTab} />
     </main>

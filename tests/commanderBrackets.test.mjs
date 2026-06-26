@@ -32,6 +32,20 @@ test("Game Changer count raises the bracket floor", () => {
   assert.ok(result.bracket >= 4);
 });
 
+test("sideboard Game Changers do not affect bracket calculation", () => {
+  const deck = deckWith(["Sol Ring", "Arcane Signet"]);
+  deck.sideboard = [
+    { qty: 1, name: "The One Ring" },
+    { qty: 1, name: "Cyclonic Rift" },
+    { qty: 1, name: "Rhystic Study" },
+    { qty: 1, name: "Gaea's Cradle" },
+  ];
+  const result = analyzeBracket(deck, {}, { avgCmc: 3.5, rampCount: 2, removalCount: 1 });
+
+  assert.deepEqual(result.gameChangers, []);
+  assert.equal(result.bracket, 2);
+});
+
 test("updated unban Game Changers are counted", () => {
   const deck = deckWith(["Gifts Ungiven", "Braids, Cabal Minion", "Coalition Victory", "Panoptic Mirror"]);
   const result = analyzeBracket(deck, {}, { avgCmc: 3, rampCount: 8, removalCount: 4 });

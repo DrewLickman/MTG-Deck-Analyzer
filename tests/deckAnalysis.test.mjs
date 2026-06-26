@@ -252,6 +252,73 @@ Deck:
   assert.ok(commander.evidence.some((item) => item.text.includes("multiplies output")));
 });
 
+test("commander role regression fixtures cover representative decision-tree cases", () => {
+  const fixtures = [
+    {
+      name: "Neriv-style multiplier",
+      commander: "Neriv, Heart of the Storm",
+      text: "If a creature you control that entered this turn would deal damage, it deals twice that much damage instead.",
+      deckCards: [
+        ["Hasty Attacker", "Creature", "Haste."],
+        ["Token Maker", "Sorcery", "Create two creature tokens."],
+      ],
+      expected: "Intensifier",
+    },
+    {
+      name: "Artifact animation permission",
+      commander: "Sydri-style Animator",
+      text: "Target noncreature artifact becomes an artifact creature until end of turn. {T}: Add one mana of any color.",
+      deckCards: [
+        ["Vehicle Shell", "Artifact - Vehicle", "Crew 2."],
+        ["Artifact Payoff", "Artifact", "Whenever an artifact enters, draw a card."],
+      ],
+      expected: "Enabler",
+    },
+    {
+      name: "Commander-dependent spell engine",
+      commander: "Spells Matter Engine",
+      text: "Whenever you cast an instant or sorcery spell, create a token.",
+      deckCards: [
+        ["Cantrip One", "Instant", "Draw a card."],
+        ["Cantrip Two", "Sorcery", "Draw a card."],
+        ["Cantrip Three", "Instant", "Copy target spell."],
+        ["Cantrip Four", "Sorcery", "Return target instant from your graveyard."],
+        ["Cantrip Five", "Instant", "Scry 1."],
+        ["Cantrip Six", "Sorcery", "Create a token."],
+      ],
+      expected: "Linchpin",
+    },
+    {
+      name: "Asymmetry and protection",
+      commander: "Safety Valve",
+      text: "Opponents can't cast spells during your turn. Ward {2}.",
+      deckCards: [
+        ["Tax Piece", "Artifact", "Spells your opponents cast cost {1} more to cast."],
+        ["Tap Piece", "Artifact", "Creatures your opponents control enter the battlefield tapped."],
+      ],
+      expected: "Counterweight",
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const deck = parseDecklist(`
+Commander:
+1 ${fixture.commander}
+
+Deck:
+${fixture.deckCards.map(([name]) => `1 ${name}`).join("\n")}
+`);
+    const cardMap = {
+      [fixture.commander]: card(fixture.commander, { type_line: "Legendary Creature", oracle_text: fixture.text }),
+      ...Object.fromEntries(fixture.deckCards.map(([name, typeLine, oracleText]) => [name, card(name, { type_line: typeLine, oracle_text: oracleText })])),
+    };
+
+    const commander = buildLocalAnalysis(deck, cardMap).commanderProfile.commanders[0];
+    assert.equal(commander.category, fixture.expected, fixture.name);
+    assert.equal(commander.categoryScores.length, 4);
+  }
+});
+
 test("partner commanders receive separate commander role classifications", () => {
   const deck = parseDecklist(`
 Commander:

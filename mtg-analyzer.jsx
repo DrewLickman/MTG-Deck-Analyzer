@@ -14,6 +14,7 @@ const TABS = [
   { id: "power", label: "Power" },
   { id: "mana", label: "Mana" },
   { id: "cards", label: "Cards" },
+  { id: "cuts", label: "Cuts" },
   { id: "upgrades", label: "Upgrades" },
   { id: "debug", label: "Debug" },
 ];
@@ -160,6 +161,12 @@ function statusClasses(status) {
   if (status === "bad" || status === "critical") return "border-rose-900 bg-rose-950/35 text-rose-200";
   if (status === "warning" || status === "warn") return "border-amber-900 bg-amber-950/35 text-amber-200";
   return "border-neutral-800 bg-neutral-950 text-neutral-300";
+}
+
+function confidenceClasses(confidence) {
+  if (confidence === "high") return "border-rose-800 bg-rose-950/40 text-rose-200";
+  if (confidence === "medium") return "border-amber-800 bg-amber-950/40 text-amber-200";
+  return "border-neutral-700 bg-neutral-950 text-neutral-300";
 }
 
 function toneForScore(score) {
@@ -1288,6 +1295,194 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
   );
 }
 
+const CUT_EXCLUDE_OPTIONS = [
+  { id: "ramp", label: "Ramp" },
+  { id: "draw", label: "Draw" },
+  { id: "removal", label: "Removal" },
+  { id: "boardWipe", label: "Wipes" },
+  { id: "land", label: "Lands" },
+  { id: "core", label: "Core" },
+];
+
+function CutCandidateCard({ candidate, cardMap, analysisReady }) {
+  const card = findCard(cardMap, candidate.name);
+  return (
+    <article className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardPreview card={card} name={candidate.name} />
+            <ManaCostDisplay card={card} />
+            <span className={`rounded border px-2 py-0.5 text-xs uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(candidate.roles || []).length
+              ? candidate.roles.map((role) => <RoleChip key={role} role={role} />)
+              : <span className="text-xs text-neutral-500">No major role detected</span>}
+          </div>
+        </div>
+        <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${analysisReady ? scoreColor(candidate.score) : "text-neutral-400"}`}>
+          {analysisReady ? `${candidate.score > 0 ? "+" : ""}${candidate.score}` : "Calculating..."}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Why Cuttable</div>
+          <ul className="mt-2 space-y-1 text-sm text-neutral-300">
+            {(candidate.reasons || []).map((reason) => <li key={reason}>{reason}</li>)}
+          </ul>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Replace With</div>
+          <div className="mt-2 text-sm font-semibold text-emerald-200">{candidate.replacementNeed}</div>
+          {(candidate.riskFlags || []).length > 0 && (
+            <div className="mt-3 rounded border border-amber-900 bg-amber-950/30 p-2 text-xs text-amber-100">
+              {candidate.riskFlags.join(" ")}
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CutsTab({ analysis, cardMap, analysisReady }) {
+  const [cutCount, setCutCount] = useState(3);
+  const [excludedRoles, setExcludedRoles] = useState([]);
+  const [highConfidenceOnly, setHighConfidenceOnly] = useState(false);
+  const [compareA, setCompareA] = useState("");
+  const [compareB, setCompareB] = useState("");
+  const candidates = analysis.cutCandidates || [];
+  const excludedSet = useMemo(() => new Set(excludedRoles), [excludedRoles]);
+  const filteredCandidates = useMemo(() => candidates.filter((candidate) => {
+    if (highConfidenceOnly && candidate.confidence !== "high") return false;
+    return !(candidate.roles || []).some((role) => excludedSet.has(role));
+  }), [candidates, excludedSet, highConfidenceOnly]);
+  const visibleCandidates = filteredCandidates.slice(0, cutCount);
+  const compareLeft = candidates.find((candidate) => candidate.name === compareA);
+  const compareRight = candidates.find((candidate) => candidate.name === compareB);
+  const needs = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
+  const exportText = [
+    "Cuts",
+    ...visibleCandidates.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`),
+    "",
+    "Adds",
+    ...(analysis.upgrades || []).slice(0, cutCount).map((upgrade) => `- ${upgrade.add}`),
+    "",
+    "Maybe cuts",
+    ...filteredCandidates.slice(cutCount, cutCount + 5).map((candidate) => `- ${candidate.name} (${candidate.confidence})`),
+    "",
+    "Protected core cards",
+    ...(analysis.coreCards || []).map((name) => `- ${name}`),
+  ].join("\n");
+
+  const toggleExcludedRole = (role) => {
+    setExcludedRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
+  };
+
+  return (
+    <div className="space-y-4">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Finder</div>
+            <div className="mt-1 text-sm text-neutral-400">{filteredCandidates.length} cut candidates after filters</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[1, 3, 10].map((count) => (
+              <button
+                key={count}
+                type="button"
+                onClick={() => setCutCount(count)}
+                className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${cutCount === count ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
+              >
+                Need {count} cut{count === 1 ? "" : "s"}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setHighConfidenceOnly((current) => !current)}
+              className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${highConfidenceOnly ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-rose-500"}`}
+            >
+              High confidence
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {CUT_EXCLUDE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => toggleExcludedRole(option.id)}
+              className={`min-h-9 rounded border px-3 py-1 text-xs ${excludedSet.has(option.id) ? "border-sky-500 bg-sky-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-sky-500"}`}
+            >
+              Exclude {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <section className="space-y-3">
+          {visibleCandidates.length
+            ? visibleCandidates.map((candidate) => <CutCandidateCard key={candidate.name} candidate={candidate} cardMap={cardMap} analysisReady={analysisReady} />)
+            : <div className={panelClass("p-4 text-sm text-neutral-500")}>No cut candidates match the current filters.</div>}
+        </section>
+
+        <aside className="space-y-4">
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Needs</div>
+            <div className="mt-3 space-y-2">
+              {needs.length
+                ? needs.map((item) => (
+                  <div key={item.key} className={`rounded border p-3 text-sm ${statusClasses(item.status)}`}>
+                    <div className="font-semibold">{item.label}</div>
+                    <div className="mt-1 text-neutral-300">{item.summary}</div>
+                  </div>
+                ))
+                : <div className="text-sm text-neutral-500">No low scorecard categories are currently active.</div>}
+            </div>
+          </section>
+
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Compare Slots</div>
+            <div className="mt-3 grid gap-2">
+              <select value={compareA} onChange={(event) => setCompareA(event.target.value)} className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100">
+                <option value="">First card</option>
+                {candidates.map((candidate) => <option key={`a-${candidate.name}`} value={candidate.name}>{candidate.name}</option>)}
+              </select>
+              <select value={compareB} onChange={(event) => setCompareB(event.target.value)} className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100">
+                <option value="">Second card</option>
+                {candidates.map((candidate) => <option key={`b-${candidate.name}`} value={candidate.name}>{candidate.name}</option>)}
+              </select>
+            </div>
+            {compareLeft && compareRight && (
+              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                {[compareLeft, compareRight].map((candidate) => (
+                  <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-950 p-3">
+                    <div className="font-semibold text-neutral-100">{candidate.name}</div>
+                    <div className={`mt-1 font-mono ${scoreColor(candidate.score)}`}>{candidate.score > 0 ? "+" : ""}{candidate.score}</div>
+                    <div className={`mt-2 inline-flex rounded border px-2 py-0.5 text-xs uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</div>
+                    <div className="mt-3 text-xs text-neutral-400">{candidate.reasons?.[0] || "No cut reason available."}</div>
+                    {(candidate.riskFlags || []).length > 0 && <div className="mt-2 text-xs text-amber-200">{candidate.riskFlags.join(" ")}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Export Changes</div>
+            <textarea readOnly value={exportText} className="mt-3 min-h-64 w-full rounded border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs leading-5 text-neutral-300" />
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function UpgradesTab({ analysis, analysisReady }) {
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
@@ -1338,7 +1533,7 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
     <section className={panelClass("p-4 sm:p-5")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Debug</div>
       <pre className="mt-3 max-h-[640px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">
-        {JSON.stringify({ deck, commanderProfile: analysis.commanderProfile, scorecard: analysis.scorecard, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
+        {JSON.stringify({ deck, commanderProfile: analysis.commanderProfile, scorecard: analysis.scorecard, cutCandidates: analysis.cutCandidates, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
       </pre>
     </section>
   );
@@ -1488,6 +1683,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
                 analysisReady={analysisReady}
               />
             )}
+            {activeTab === "cuts" && <CutsTab analysis={analysis} cardMap={cardMap} analysisReady={analysisReady} />}
             {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} />}
             {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
           </>

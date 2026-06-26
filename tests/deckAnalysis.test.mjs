@@ -626,7 +626,7 @@ Deck:
     "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
     Island: makeBasicLandCard("Island"),
     "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
-    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", oracle_text: "{T}: Add one mana of any color in your commander's color identity." }),
+    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", oracle_text: "{T}: Add {W}, {U}, or {R}." }),
   };
 
   const loose = buildLocalAnalysis(deck, cardMap, { analysisSettings: { rampTarget: 2 } });
@@ -669,6 +669,91 @@ Sideboard:
   assert.equal(coreScore.protected, true);
   assert.equal(analysis.upgrades.some((upgrade) => upgrade.cut === "Expensive Blank"), false);
   assert.ok(synergy.highlightCards.includes("Young Pyromancer"));
+});
+
+test("cut candidates never include commanders or selected core cards", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Young Pyromancer
+1 Expensive Blank
+1 Seven Drop
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Young Pyromancer": card("Young Pyromancer", { cmc: 2, mana_cost: "{1}{R}", type_line: "Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a 1/1 token." }),
+    "Expensive Blank": card("Expensive Blank", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap, { coreCards: ["Expensive Blank"] });
+  const cutNames = analysis.cutCandidates.map((candidate) => candidate.name);
+
+  assert.equal(cutNames.includes("Kykar, Wind's Fury"), false);
+  assert.equal(cutNames.includes("Expensive Blank"), false);
+  assert.ok(cutNames.includes("Seven Drop"));
+  assert.equal(analysis.cutCandidates.find((candidate) => candidate.name === "Seven Drop").protected, false);
+});
+
+test("cut candidates rank low-synergy expensive cards above useful role cards", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Sol Ring
+1 Swords to Plowshares
+1 Faithless Looting
+1 Seven Drop
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+    "Swords to Plowshares": card("Swords to Plowshares", { cmc: 1, mana_cost: "{W}", type_line: "Instant", oracle_text: "Exile target creature." }),
+    "Faithless Looting": card("Faithless Looting", { cmc: 1, mana_cost: "{R}", type_line: "Sorcery", oracle_text: "Draw two cards, then discard two cards. Flashback." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const firstCut = analysis.cutCandidates[0];
+  const roleCard = analysis.cutCandidates.find((candidate) => candidate.name === "Swords to Plowshares");
+
+  assert.equal(firstCut.name, "Seven Drop");
+  assert.ok(firstCut.reasons.some((reason) => reason.includes("Expensive slot")));
+  assert.ok(roleCard.riskFlags.some((flag) => flag.includes("Removal")));
+});
+
+test("upgrade suggestions pair adds with ranked cut candidates", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Seven Drop
+
+Sideboard:
+1 Arcane Signet
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", oracle_text: "{T}: Add {W}, {U}, or {R}." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.sideboardAnalysis[0].recommendation, "add");
+  assert.equal(analysis.upgrades[0].cut, "Seven Drop");
+  assert.equal(analysis.upgrades[0].add, "Arcane Signet");
+  assert.match(analysis.upgrades[0].reason, /Cut candidate reason/);
 });
 
 test("core identity cards propagate into synergy clusters", () => {

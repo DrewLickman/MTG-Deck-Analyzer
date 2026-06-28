@@ -50,6 +50,9 @@ Deck:
   assert.ok(analysis.structure.interactionProfile);
   assert.ok(analysis.structure.resilienceProfile);
   assert.ok(analysis.structure.winPlan);
+  assert.ok(analysis.manaFit);
+  assert.ok(analysis.structure.manaFit);
+  assert.equal(typeof analysis.manaFit.recommendation, "string");
   assert.ok(Array.isArray(analysis.priorityFindings));
   assert.ok(Array.isArray(analysis.scorecard));
   assert.equal(typeof analysis.overallScore, "number");
@@ -631,10 +634,108 @@ Deck:
 
   const loose = buildLocalAnalysis(deck, cardMap, { analysisSettings: { rampTarget: 2 } });
   const strict = buildLocalAnalysis(deck, cardMap, { analysisSettings: { rampTarget: 10 } });
-  const looseRamp = loose.scorecard.find((item) => item.key === "ramp");
-  const strictRamp = strict.scorecard.find((item) => item.key === "ramp");
+  const looseRamp = loose.scorecard.find((item) => item.key === "mana");
+  const strictRamp = strict.scorecard.find((item) => item.key === "mana");
 
   assert.ok(looseRamp.score > strictRamp.score);
+  assert.ok(loose.manaFit.rampRange.min < strict.manaFit.rampRange.min);
+});
+
+test("low-curve decks can run lighter mana support without hard punishment", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Lean Commander
+
+Deck:
+34 Island
+5 Cheap Rock
+20 Cheap Play
+`);
+  const cardMap = {
+    "Lean Commander": card("Lean Commander", { cmc: 2, mana_cost: "{U}{R}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a cheap spell, draw a card." }),
+    Island: makeBasicLandCard("Island"),
+    "Cheap Rock": card("Cheap Rock", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Cheap Play": card("Cheap Play", { cmc: 2, mana_cost: "{1}{U}", type_line: "Instant", oracle_text: "Draw a card." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.manaFit.status, "good");
+  assert.ok(analysis.manaFit.landRange.min <= 34);
+  assert.ok(analysis.manaFit.rampRange.min <= 5);
+  assert.equal(analysis.priorityFindings.some((finding) => finding.label === "Mana support is light"), false);
+});
+
+test("top-heavy decks receive stronger mana-support warnings", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Expensive Commander
+
+Deck:
+34 Island
+2 Cheap Rock
+12 Seven Drop
+4 Six Drop
+4 Five Drop
+2 Removal Spell
+`);
+  const cardMap = {
+    "Expensive Commander": card("Expensive Commander", { cmc: 6, mana_cost: "{4}{U}{R}", type_line: "Legendary Creature", oracle_text: "At the beginning of combat, copy a spell." }),
+    Island: makeBasicLandCard("Island"),
+    "Cheap Rock": card("Cheap Rock", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Six Drop": card("Six Drop", { cmc: 6, mana_cost: "{6}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Five Drop": card("Five Drop", { cmc: 5, mana_cost: "{5}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Removal Spell": card("Removal Spell", { cmc: 2, mana_cost: "{1}{B}", type_line: "Instant", oracle_text: "Destroy target creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.manaFit.status, "bad");
+  assert.ok(analysis.manaFit.curvePressure >= 4);
+  assert.ok(analysis.manaFit.landRange.min > 36);
+  assert.ok(analysis.priorityFindings.some((finding) => finding.label === "Mana support is light"));
+});
+
+test("mana fit ramp range changes with commander and top-end pressure", () => {
+  const leanDeck = parseDecklist(`
+Commander:
+1 Lean Commander
+
+Deck:
+34 Island
+5 Cheap Rock
+20 Cheap Play
+`);
+  const heavyDeck = parseDecklist(`
+Commander:
+1 Expensive Commander
+
+Deck:
+34 Island
+2 Cheap Rock
+12 Seven Drop
+4 Six Drop
+4 Five Drop
+2 Removal Spell
+`);
+  const sharedCardMap = {
+    "Lean Commander": card("Lean Commander", { cmc: 2, mana_cost: "{U}{R}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a cheap spell, draw a card." }),
+    "Expensive Commander": card("Expensive Commander", { cmc: 6, mana_cost: "{4}{U}{R}", type_line: "Legendary Creature", oracle_text: "At the beginning of combat, copy a spell." }),
+    Island: makeBasicLandCard("Island"),
+    "Cheap Rock": card("Cheap Rock", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Cheap Play": card("Cheap Play", { cmc: 2, mana_cost: "{1}{U}", type_line: "Instant", oracle_text: "Draw a card." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Six Drop": card("Six Drop", { cmc: 6, mana_cost: "{6}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Five Drop": card("Five Drop", { cmc: 5, mana_cost: "{5}", type_line: "Creature", oracle_text: "Large threat." }),
+    "Removal Spell": card("Removal Spell", { cmc: 2, mana_cost: "{1}{B}", type_line: "Instant", oracle_text: "Destroy target creature." }),
+  };
+
+  const lean = buildLocalAnalysis(leanDeck, sharedCardMap);
+  const heavy = buildLocalAnalysis(heavyDeck, sharedCardMap);
+
+  assert.ok(heavy.manaFit.rampRange.min > lean.manaFit.rampRange.min);
+  assert.ok(heavy.manaFit.reasons.some((reason) => reason.includes("Commander mana value 6")));
 });
 
 test("core identity cards are protected from cut suggestions and shape synergy", () => {

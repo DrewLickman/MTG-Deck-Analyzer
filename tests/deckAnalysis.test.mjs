@@ -55,6 +55,11 @@ Deck:
   assert.equal(typeof analysis.manaFit.recommendation, "string");
   assert.ok(Array.isArray(analysis.priorityFindings));
   assert.ok(Array.isArray(analysis.scorecard));
+  assert.ok(analysis.roadmap);
+  assert.ok(Array.isArray(analysis.roadmap.steps));
+  assert.ok(Array.isArray(analysis.roadmap.cutPriorities));
+  assert.ok(analysis.actionPlan);
+  assert.ok(Array.isArray(analysis.actionPlan.tasks));
   assert.equal(typeof analysis.overallScore, "number");
 });
 
@@ -828,6 +833,169 @@ Deck:
   assert.equal(firstCut.name, "Seven Drop");
   assert.ok(firstCut.reasons.some((reason) => reason.includes("Expensive slot")));
   assert.ok(roleCard.riskFlags.some((flag) => flag.includes("Removal")));
+  assert.equal(typeof firstCut.rank, "number");
+  assert.ok(firstCut.cutPressure > firstCut.keepPressure);
+});
+
+test("normal decks over 100 total cards suggest exact required cuts", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+96 Island
+1 Seven Drop
+1 Blank One
+1 Blank Two
+1 Sol Ring
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Blank One": card("Blank One", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Blank Two": card("Blank Two", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Sol Ring": card("Sol Ring", { cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.deckSizePlan.totalCards, 101);
+  assert.equal(analysis.deckSizePlan.allowedTotal, 100);
+  assert.equal(analysis.deckSizePlan.cutsNeeded, 1);
+  assert.equal(analysis.priorityFindings[0].label, "Deck has too many cards");
+  assert.equal(analysis.cutCandidates.filter((candidate) => candidate.sizeCutRecommended).length, 1);
+  assert.equal(analysis.actionPlan.status, "required");
+  assert.ok(analysis.actionPlan.requiredCount >= 1);
+  assert.ok(analysis.actionPlan.tasks.some((task) => task.label === "Deck has too many cards" && task.tab === "cuts"));
+  assert.ok(analysis.actionPlan.nextCuts.some((candidate) => candidate.required));
+});
+
+test("partner decks allow 101 total cards before size cuts", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Partner One
+1 Partner Two
+
+Deck:
+96 Island
+1 Blank One
+1 Blank Two
+1 Blank Three
+`);
+  const cardMap = {
+    "Partner One": card("Partner One", { cmc: 2, mana_cost: "{U}", type_line: "Legendary Creature", oracle_text: "Partner" }),
+    "Partner Two": card("Partner Two", { cmc: 2, mana_cost: "{R}", type_line: "Legendary Creature", oracle_text: "Partner" }),
+    Island: makeBasicLandCard("Island"),
+    "Blank One": card("Blank One", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Blank Two": card("Blank Two", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Blank Three": card("Blank Three", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.deckSizePlan.totalCards, 101);
+  assert.equal(analysis.deckSizePlan.allowedTotal, 101);
+  assert.equal(analysis.deckSizePlan.cutsNeeded, 0);
+  assert.equal(analysis.priorityFindings.some((finding) => finding.label === "Deck has too many cards"), false);
+});
+
+test("partner decks over 101 total cards cut down to 100", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Partner One
+1 Partner Two
+
+Deck:
+96 Island
+1 Seven Drop
+1 Blank One
+1 Blank Two
+1 Blank Three
+`);
+  const cardMap = {
+    "Partner One": card("Partner One", { cmc: 2, mana_cost: "{U}", type_line: "Legendary Creature", oracle_text: "Partner" }),
+    "Partner Two": card("Partner Two", { cmc: 2, mana_cost: "{R}", type_line: "Legendary Creature", oracle_text: "Partner" }),
+    Island: makeBasicLandCard("Island"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Blank One": card("Blank One", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Blank Two": card("Blank Two", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Blank Three": card("Blank Three", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+
+  assert.equal(analysis.deckSizePlan.totalCards, 102);
+  assert.equal(analysis.deckSizePlan.allowedTotal, 101);
+  assert.equal(analysis.deckSizePlan.cutsNeeded, 2);
+  assert.equal(analysis.cutCandidates.filter((candidate) => candidate.sizeCutRecommended).length, 2);
+});
+
+test("land cut candidates only appear when mana fit is heavy", () => {
+  const leanDeck = parseDecklist(`
+Commander:
+1 Lean Commander
+
+Deck:
+34 Island
+5 Cheap Rock
+12 Cheap Play
+`);
+  const heavyDeck = parseDecklist(`
+Commander:
+1 Lean Commander
+
+Deck:
+45 Island
+5 Cheap Rock
+12 Cheap Play
+`);
+  const cardMap = {
+    "Lean Commander": card("Lean Commander", { cmc: 2, mana_cost: "{U}{R}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a cheap spell, draw a card." }),
+    Island: makeBasicLandCard("Island"),
+    "Cheap Rock": card("Cheap Rock", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "{T}: Add {C}." }),
+    "Cheap Play": card("Cheap Play", { cmc: 2, mana_cost: "{1}{U}", type_line: "Instant", oracle_text: "Draw a card." }),
+  };
+
+  const lean = buildLocalAnalysis(leanDeck, cardMap);
+  const heavy = buildLocalAnalysis(heavyDeck, cardMap);
+
+  assert.equal(lean.cutCandidates.some((candidate) => candidate.roles.includes("land")), false);
+  assert.equal(heavy.cutCandidates.some((candidate) => candidate.roles.includes("land")), true);
+});
+
+test("roadmap summarizes build steps cuts upgrades and protected cards", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Young Pyromancer
+1 Impact Tremors
+1 Seven Drop
+
+Sideboard:
+1 Arcane Signet
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Young Pyromancer": card("Young Pyromancer", { cmc: 2, mana_cost: "{1}{R}", type_line: "Creature", oracle_text: "Whenever you cast an instant or sorcery spell, create a 1/1 token." }),
+    "Impact Tremors": card("Impact Tremors", { cmc: 2, mana_cost: "{1}{R}", type_line: "Enchantment", oracle_text: "Whenever a creature enters the battlefield under your control, Impact Tremors deals 1 damage to each opponent." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", oracle_text: "{T}: Add {W}, {U}, or {R}." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap, { coreCards: ["Young Pyromancer"] });
+
+  assert.equal(typeof analysis.roadmap.headline, "string");
+  assert.ok(analysis.roadmap.steps.length > 0);
+  assert.ok(analysis.roadmap.cutPriorities.some((candidate) => candidate.name === "Seven Drop"));
+  assert.ok(analysis.roadmap.upgradePairs.some((pair) => pair.add === "Arcane Signet"));
+  assert.ok(analysis.roadmap.protect.includes("Young Pyromancer"));
+  assert.ok(analysis.actionPlan.nextAdds.some((pair) => pair.add === "Arcane Signet"));
+  assert.ok(analysis.actionPlan.protect.includes("Young Pyromancer"));
 });
 
 test("upgrade suggestions pair adds with ranked cut candidates", () => {

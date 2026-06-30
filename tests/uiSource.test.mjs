@@ -63,6 +63,37 @@ test("analysis tabs are organized by user job", () => {
   assert.match(source, /function ManaTab/);
 });
 
+test("home renders a build roadmap for deckbuilding decisions", () => {
+  assert.match(source, /const roadmap = analysis\.roadmap/);
+  assert.match(source, /Build Roadmap/);
+  assert.match(source, /roadmap\.headline/);
+  assert.match(source, /roadmap\.steps/);
+  assert.match(source, /First Cuts/);
+  assert.match(source, /roadmap\.cutPriorities/);
+  assert.match(source, /Protect/);
+  assert.match(source, /roadmap\.protect/);
+});
+
+test("home renders an action plan queue with cuts adds and tab navigation", () => {
+  assert.match(source, /function ActionPlanPanel/);
+  assert.match(source, /const actionPlan = analysis\.actionPlan/);
+  assert.match(source, /Action Plan/);
+  assert.match(source, /actionPlan\?\.headline/);
+  assert.match(source, /actionPlan\?\.requiredCount/);
+  assert.match(source, /actionPlan\?\.recommendedCount/);
+  assert.match(source, /Open \{TABS\.find/);
+  assert.match(source, /setActiveTab\(task\.tab\)/);
+  assert.match(source, /Next Cuts/);
+  assert.match(source, /actionPlan\?\.nextCuts/);
+  assert.match(source, /Next Adds/);
+  assert.match(source, /actionPlan\?\.nextAdds/);
+});
+
+test("local analysis builds roadmap data", () => {
+  assert.match(source, /analysis\.roadmap/);
+  assert.match(source, /analysis\.actionPlan/);
+});
+
 test("import UI exposes only the Moxfield URL flow", () => {
   assert.match(source, /Moxfield Import/);
   assert.match(source, /Import & Analyze/);
@@ -90,4 +121,88 @@ test("old nine-box top metric strip labels are removed", () => {
   assert.doesNotMatch(source, /Metric label="Bracket"/);
   assert.doesNotMatch(source, /Metric label="Core Syn"/);
   assert.doesNotMatch(source, /Metric label="Findings"/);
+});
+
+test("cuts tab renders exact required cut count controls", () => {
+  assert.match(source, /const deckSizePlan = analysis\.deckSizePlan/);
+  assert.match(source, /const requiredCuts = deckSizePlan\.cutsNeeded/);
+  assert.match(source, /Need \{requiredCuts\} cut/);
+  assert.match(source, /setCutCount\(requiredCuts \|\| 3\)/);
+  assert.match(source, /\[requiredCuts, 1, 3, 10\]/);
+  assert.match(source, /sizeCutRecommended/);
+});
+
+test("cut export uses visible required cuts first", () => {
+  assert.match(source, /requiredExportCuts/);
+  assert.match(source, /additionalCutIdeas/);
+  assert.match(source, /Required cuts/);
+  assert.match(source, /Additional cut ideas/);
+  assert.match(source, /Do not cut/);
+  assert.match(source, /keptCandidateKeys/);
+});
+
+test("cut export can be copied with feedback", () => {
+  assert.match(source, /const \[exportCopyStatus, setExportCopyStatus\] = useState\("idle"\)/);
+  assert.match(source, /setExportCopyStatus\("idle"\)/);
+  assert.match(source, /const copyExportText = async \(\) =>/);
+  assert.match(source, /navigator\.clipboard\?\.writeText/);
+  assert.match(source, /navigator\.clipboard\.writeText\(exportText\)/);
+  assert.match(source, /setExportCopyStatus\("copied"\)/);
+  assert.match(source, /setExportCopyStatus\("error"\)/);
+  assert.match(source, /Copy change plan/);
+  assert.match(source, /Clipboard access was blocked/);
+});
+
+test("cuts tab supports interactive cut review decisions", () => {
+  assert.match(source, /const \[cutDecisions, setCutDecisions\] = useState\(\{\}\)/);
+  assert.match(source, /function CutCandidateCard\(\{ candidate, cardMap, analysisReady, decision, onDecision \}\)/);
+  assert.match(source, /onDecision\(candidate\.name, decision === "cut" \? null : "cut"\)/);
+  assert.match(source, /onDecision\(candidate\.name, decision === "keep" \? null : "keep"\)/);
+  assert.match(source, /Cut Review/);
+  assert.match(source, /Accepted cuts/);
+  assert.match(source, /Kept candidates/);
+});
+
+test("cuts review has bulk accept and clear actions", () => {
+  assert.match(source, /const acceptRecommendedCuts = \(\) =>/);
+  assert.match(source, /for \(const candidate of requiredExportCuts\)/);
+  assert.match(source, /next\[normalizeName\(candidate\.name\)\] = "cut"/);
+  assert.match(source, /const clearCutReview = \(\) =>/);
+  assert.match(source, /setCutDecisions\(\{\}\)/);
+  assert.match(source, /Accept recommended cuts/);
+  assert.match(source, /Clear review/);
+});
+
+test("cuts review shows projected deck size and automatic fill choices", () => {
+  assert.match(source, /projectedTotal/);
+  assert.match(source, /projectedExportTotal/);
+  assert.match(source, /projectedExportMeetsTarget/);
+  assert.match(source, /remainingManualCuts/);
+  assert.match(source, /Auto-fill Cuts/);
+  assert.match(source, /Projected Export Total/);
+});
+
+test("compare slots expose rank pressure and review decisions", () => {
+  assert.match(source, /function CompareCandidatePanel/);
+  assert.match(source, /candidate\.cutPressure/);
+  assert.match(source, /candidate\.keepPressure/);
+  assert.match(source, /candidate\.replacementNeed/);
+  assert.match(source, /candidate\.cutReason/);
+  assert.match(source, /candidate\.keepRisk/);
+  assert.match(source, /<CompareCandidatePanel/);
+  assert.match(source, /decision=\{cutDecisions\[normalizeName\(candidate\.name\)\]\}/);
+  assert.match(source, /onDecision=\{setCandidateDecision\}/);
+});
+
+test("upgrades tab renders copyable add plan", () => {
+  assert.match(source, /function UpgradesTab/);
+  assert.match(source, /const roadmap = analysis\.roadmap/);
+  assert.match(source, /const \[addPlanCopyStatus, setAddPlanCopyStatus\] = useState\("idle"\)/);
+  assert.match(source, /const addPlanText = \[/);
+  assert.match(source, /const copyAddPlan = async \(\) =>/);
+  assert.match(source, /navigator\.clipboard\.writeText\(addPlanText\)/);
+  assert.match(source, /Add Plan/);
+  assert.match(source, /Copy add plan/);
+  assert.match(source, /Suggested Adds/);
+  assert.match(source, /Candidate Pool/);
 });

@@ -549,12 +549,103 @@ function ScorecardPanel({ item, analysisReady }) {
   );
 }
 
-function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
+function priorityClasses(priority) {
+  if (priority === "required") return "border-rose-800 bg-rose-950/30 text-rose-100";
+  if (priority === "recommended") return "border-amber-800 bg-amber-950/30 text-amber-100";
+  return "border-neutral-800 bg-neutral-950 text-neutral-300";
+}
+
+function ActionPlanPanel({ actionPlan, setActiveTab }) {
+  const tasks = actionPlan?.tasks || [];
+  return (
+    <section className={panelClass("p-4 sm:p-5")}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Action Plan</div>
+          <div className="mt-1 text-sm text-neutral-300">{actionPlan?.headline || "No action plan available yet."}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:min-w-[220px]">
+          <Metric label="Required" value={actionPlan?.requiredCount ?? 0} tone={(actionPlan?.requiredCount || 0) > 0 ? "bad" : "good"} />
+          <Metric label="Tuning" value={actionPlan?.recommendedCount ?? 0} tone={(actionPlan?.recommendedCount || 0) > 0 ? "warn" : "neutral"} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-2">
+          {tasks.length ? tasks.map((task, index) => (
+            <article key={task.id || `${task.label}-${index}`} className={`rounded border p-3 ${priorityClasses(task.priority)}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded border border-current/40 font-mono text-xs">{index + 1}</span>
+                    <span className="text-sm font-semibold">{task.label}</span>
+                    <span className="rounded border border-current/30 px-1.5 py-0.5 text-[11px] uppercase">{task.priority}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-neutral-300">{task.action}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{task.detail}</p>
+                  {(task.relatedCards || []).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {task.relatedCards.slice(0, 5).map((card) => <span key={card} className="rounded border border-neutral-700 bg-neutral-950/70 px-2 py-0.5 text-xs text-neutral-300">{card}</span>)}
+                    </div>
+                  )}
+                </div>
+                {task.tab && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(task.tab)}
+                    className="min-h-9 shrink-0 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-200 hover:border-amber-500 hover:text-amber-200"
+                  >
+                    Open {TABS.find((tab) => tab.id === task.tab)?.label || "tab"}
+                  </button>
+                )}
+              </div>
+            </article>
+          )) : <div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-500">No required tasks are active.</div>}
+        </div>
+
+        <aside className="space-y-3">
+          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Cuts</div>
+            <div className="mt-2 space-y-2">
+              {(actionPlan?.nextCuts || []).slice(0, 4).map((candidate) => (
+                <div key={candidate.name} className="text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-neutral-100">{candidate.name}</span>
+                    <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.required ? "required" : candidate.confidence}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
+                </div>
+              ))}
+              {!(actionPlan?.nextCuts || []).length && <div className="text-sm text-neutral-500">No cut queue yet.</div>}
+            </div>
+          </div>
+
+          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Adds</div>
+            <div className="mt-2 space-y-2">
+              {(actionPlan?.nextAdds || []).slice(0, 3).map((upgrade) => (
+                <div key={`${upgrade.add}-${upgrade.cut}`} className="text-sm">
+                  <div className="font-semibold text-neutral-100">{upgrade.add}</div>
+                  <div className="mt-1 text-xs text-neutral-500">Test over {upgrade.cut}</div>
+                </div>
+              ))}
+              {!(actionPlan?.nextAdds || []).length && <div className="text-sm text-neutral-500">No add candidates supplied.</div>}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function ScorecardTab({ analysis, settings, setSettings, setActiveTab, analysisReady }) {
   const actionFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity !== "notice").slice(0, 4);
   const topCuts = (analysis.cutCandidates || []).slice(0, 4);
   const topUpgrades = (analysis.upgrades || []).slice(0, 3);
   const needsAttention = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
   const strengths = (analysis.highlights?.strengths || []).filter((item) => !item.ignored).slice(0, 4);
+  const roadmap = analysis.roadmap || {};
+  const actionPlan = analysis.actionPlan || {};
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -575,6 +666,59 @@ function ScorecardTab({ analysis, settings, setSettings, analysisReady }) {
             {actionFindings.length
               ? actionFindings.map((finding) => <FindingCard key={`${finding.label}-${finding.action}`} finding={finding} />)
               : <FindingCard finding={{ severity: "notice", label: "No active fix", detail: "The main checks are not flagging a critical deckbuilding task.", action: "Use Cuts or playtest notes for finer tuning." }} />}
+          </div>
+        </div>
+      </section>
+
+      <ActionPlanPanel actionPlan={actionPlan} setActiveTab={setActiveTab} />
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Build Roadmap</div>
+            <div className="mt-1 text-sm text-neutral-300">{roadmap.headline || "Tune around the strongest game-plan pieces and playtest results."}</div>
+          </div>
+          <span className={`w-fit rounded border px-2 py-1 text-xs uppercase ${roadmap.status === "stable" ? "border-emerald-800 text-emerald-200" : "border-amber-800 text-amber-200"}`}>
+            {roadmap.status === "stable" ? "stable draft" : "needs work"}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+          <div className="space-y-2">
+            {(roadmap.steps || []).slice(0, 4).map((step, index) => (
+              <div key={`${step.label}-${index}`} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded border border-neutral-700 font-mono text-xs text-neutral-400">{index + 1}</span>
+                  <span className="text-sm font-semibold text-neutral-100">{step.label}</span>
+                </div>
+                <div className="mt-2 text-sm text-neutral-300">{step.action}</div>
+                <div className="mt-1 text-xs text-neutral-500">{step.reason}</div>
+              </div>
+            ))}
+            {!(roadmap.steps || []).length && <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No urgent build steps are active; tune from matchup notes.</div>}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500">First Cuts</div>
+              <div className="mt-2 space-y-2">
+                {(roadmap.cutPriorities || []).slice(0, 3).map((candidate) => (
+                  <div key={candidate.name} className="text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-neutral-100">{candidate.name}</span>
+                      <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Protect</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(roadmap.protect || []).length
+                  ? roadmap.protect.slice(0, 6).map((name) => <span key={name} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{name}</span>)
+                  : <span className="text-sm text-neutral-500">Mark core cards as you identify them.</span>}
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1368,26 +1512,62 @@ const CUT_EXCLUDE_OPTIONS = [
   { id: "core", label: "Core" },
 ];
 
-function CutCandidateCard({ candidate, cardMap, analysisReady }) {
+function CutCandidateCard({ candidate, cardMap, analysisReady, decision, onDecision }) {
   const card = findCard(cardMap, candidate.name);
+  const decisionClasses = decision === "cut"
+    ? "border-rose-500 bg-rose-950/30"
+    : decision === "keep"
+      ? "border-emerald-600 bg-emerald-950/20"
+      : "border-neutral-800 bg-neutral-950";
   return (
-    <article className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
+    <article className={`rounded-lg border p-3 sm:p-4 ${decisionClasses}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <CardPreview card={card} name={candidate.name} />
             <ManaCostDisplay card={card} />
             <span className={`rounded border px-2 py-0.5 text-xs uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
+            {decision && <span className={`rounded border px-2 py-0.5 text-xs uppercase ${decision === "cut" ? "border-rose-700 text-rose-200" : "border-emerald-700 text-emerald-200"}`}>{decision}</span>}
           </div>
           <div className="mt-2 flex flex-wrap gap-1">
+            {candidate.sizeCutRecommended && <span className="rounded border border-rose-800 bg-rose-950/40 px-2 py-0.5 text-xs uppercase text-rose-200">required cut</span>}
             {(candidate.roles || []).length
               ? candidate.roles.map((role) => <RoleChip key={role} role={role} />)
               : <span className="text-xs text-neutral-500">No major role detected</span>}
           </div>
         </div>
-        <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${analysisReady ? scoreColor(candidate.score) : "text-neutral-400"}`}>
-          {analysisReady ? `${candidate.score > 0 ? "+" : ""}${candidate.score}` : "Calculating..."}
+        <div className="shrink-0 text-right">
+          <div className={`rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${analysisReady ? scoreColor(candidate.score) : "text-neutral-400"}`}>
+            {analysisReady ? `${candidate.score > 0 ? "+" : ""}${candidate.score}` : "Calculating..."}
+          </div>
+          {Number.isFinite(candidate.rank) && <div className="mt-1 text-xs text-neutral-500">Rank {candidate.rank}</div>}
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onDecision(candidate.name, decision === "cut" ? null : "cut")}
+          className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${decision === "cut" ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-rose-500 hover:text-rose-200"}`}
+        >
+          Cut
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecision(candidate.name, decision === "keep" ? null : "keep")}
+          className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${decision === "keep" ? "border-emerald-500 bg-emerald-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-emerald-500 hover:text-emerald-200"}`}
+        >
+          Keep
+        </button>
+        {decision && (
+          <button
+            type="button"
+            onClick={() => onDecision(candidate.name, null)}
+            className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -1396,6 +1576,9 @@ function CutCandidateCard({ candidate, cardMap, analysisReady }) {
           <ul className="mt-2 space-y-1 text-sm text-neutral-300">
             {(candidate.reasons || []).map((reason) => <li key={reason}>{reason}</li>)}
           </ul>
+          {Number.isFinite(candidate.cutPressure) && (
+            <div className="mt-3 text-xs text-neutral-500">Cut pressure {candidate.cutPressure} minus keep pressure {candidate.keepPressure ?? 0}</div>
+          )}
         </div>
         <div>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Replace With</div>
@@ -1411,25 +1594,113 @@ function CutCandidateCard({ candidate, cardMap, analysisReady }) {
   );
 }
 
+function CompareCandidatePanel({ candidate, decision, onDecision, analysisReady }) {
+  return (
+    <div className={`rounded border p-3 ${decision === "cut" ? "border-rose-700 bg-rose-950/30" : decision === "keep" ? "border-emerald-700 bg-emerald-950/20" : "border-neutral-800 bg-neutral-950"}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-neutral-100">{candidate.name}</div>
+          <div className={`mt-1 inline-flex rounded border px-2 py-0.5 text-xs uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</div>
+        </div>
+        <div className="text-right">
+          <div className={`font-mono ${analysisReady ? scoreColor(candidate.score) : "text-neutral-400"}`}>{analysisReady ? `${candidate.score > 0 ? "+" : ""}${candidate.score}` : "..."}</div>
+          {Number.isFinite(candidate.rank) && <div className="mt-1 text-xs text-neutral-500">Rank {candidate.rank}</div>}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1">
+          <div className="uppercase tracking-wide text-neutral-500">Cut</div>
+          <div className="mt-1 font-mono text-rose-200">{candidate.cutPressure ?? "-"}</div>
+        </div>
+        <div className="rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1">
+          <div className="uppercase tracking-wide text-neutral-500">Keep</div>
+          <div className="mt-1 font-mono text-emerald-200">{candidate.keepPressure ?? 0}</div>
+        </div>
+        <div className="rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1">
+          <div className="uppercase tracking-wide text-neutral-500">Need</div>
+          <div className="mt-1 truncate text-neutral-200">{candidate.replacementNeed}</div>
+        </div>
+      </div>
+      <div className="mt-3">
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Reason</div>
+        <div className="mt-1 text-xs text-neutral-300">{candidate.cutReason?.[0] || candidate.reasons?.[0] || "No cut reason available."}</div>
+      </div>
+      {(candidate.keepRisk || candidate.riskFlags || []).length > 0 && (
+        <div className="mt-3 rounded border border-amber-900 bg-amber-950/30 p-2 text-xs text-amber-100">
+          {(candidate.keepRisk || candidate.riskFlags).join(" ")}
+        </div>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => onDecision(candidate.name, decision === "cut" ? null : "cut")}
+          className={`min-h-8 flex-1 rounded border px-2 py-1 text-xs font-semibold ${decision === "cut" ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-rose-500 hover:text-rose-200"}`}
+        >
+          Cut
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecision(candidate.name, decision === "keep" ? null : "keep")}
+          className={`min-h-8 flex-1 rounded border px-2 py-1 text-xs font-semibold ${decision === "keep" ? "border-emerald-500 bg-emerald-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-emerald-500 hover:text-emerald-200"}`}
+        >
+          Keep
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CutsTab({ analysis, cardMap, analysisReady }) {
-  const [cutCount, setCutCount] = useState(3);
+  const deckSizePlan = analysis.deckSizePlan || {};
+  const requiredCuts = deckSizePlan.cutsNeeded || 0;
+  const [cutCount, setCutCount] = useState(requiredCuts || 3);
+  const [cutDecisions, setCutDecisions] = useState({});
   const [excludedRoles, setExcludedRoles] = useState([]);
   const [highConfidenceOnly, setHighConfidenceOnly] = useState(false);
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");
+  const [exportCopyStatus, setExportCopyStatus] = useState("idle");
   const candidates = analysis.cutCandidates || [];
+  const candidateKeys = useMemo(() => new Set(candidates.map((candidate) => normalizeName(candidate.name))), [candidates]);
   const excludedSet = useMemo(() => new Set(excludedRoles), [excludedRoles]);
   const filteredCandidates = useMemo(() => candidates.filter((candidate) => {
     if (highConfidenceOnly && candidate.confidence !== "high") return false;
     return !(candidate.roles || []).some((role) => excludedSet.has(role));
   }), [candidates, excludedSet, highConfidenceOnly]);
   const visibleCandidates = filteredCandidates.slice(0, cutCount);
+  const acceptedCuts = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "cut");
+  const keptCandidates = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "keep");
+  const acceptedCutKeys = new Set(acceptedCuts.map((candidate) => normalizeName(candidate.name)));
+  const keptCandidateKeys = new Set(keptCandidates.map((candidate) => normalizeName(candidate.name)));
+  const requiredExportCuts = requiredCuts > 0
+    ? [
+      ...acceptedCuts,
+      ...filteredCandidates
+        .filter((candidate) => !acceptedCutKeys.has(normalizeName(candidate.name)) && !keptCandidateKeys.has(normalizeName(candidate.name)))
+        .slice(0, Math.max(0, requiredCuts - acceptedCuts.length)),
+    ].slice(0, requiredCuts)
+    : acceptedCuts.length
+      ? acceptedCuts
+      : visibleCandidates;
+  const requiredExportKeys = new Set(requiredExportCuts.map((candidate) => normalizeName(candidate.name)));
+  const additionalCutIdeas = visibleCandidates.filter((candidate) => {
+    const key = normalizeName(candidate.name);
+    return !requiredExportKeys.has(key) && !keptCandidateKeys.has(key);
+  });
+  const autoFillCuts = requiredCuts > 0 ? requiredExportCuts.filter((candidate) => !acceptedCutKeys.has(normalizeName(candidate.name))) : [];
+  const acceptedCutCountForTarget = Math.min(acceptedCuts.length, requiredCuts || acceptedCuts.length);
+  const projectedTotal = Number.isFinite(deckSizePlan.totalCards) ? deckSizePlan.totalCards - acceptedCuts.length : null;
+  const projectedExportTotal = Number.isFinite(deckSizePlan.totalCards) ? deckSizePlan.totalCards - requiredExportCuts.length : null;
+  const projectedExportMeetsTarget = Number.isFinite(projectedExportTotal) && projectedExportTotal <= (deckSizePlan.targetTotal || 100);
+  const remainingManualCuts = Math.max(0, requiredCuts - acceptedCuts.length);
   const compareLeft = candidates.find((candidate) => candidate.name === compareA);
   const compareRight = candidates.find((candidate) => candidate.name === compareB);
   const needs = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
   const exportText = [
-    "Cuts",
-    ...visibleCandidates.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`),
+    requiredCuts > 0 ? `Required cuts (${requiredCuts})` : "Cuts",
+    ...requiredExportCuts.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`),
+    ...(requiredCuts > 0 && additionalCutIdeas.length ? ["", "Additional cut ideas", ...additionalCutIdeas.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`)] : []),
+    ...(keptCandidates.length ? ["", "Do not cut", ...keptCandidates.map((candidate) => `- ${candidate.name}`)] : []),
     "",
     "Adds",
     ...(analysis.upgrades || []).slice(0, cutCount).map((upgrade) => `- ${upgrade.add}`),
@@ -1441,20 +1712,85 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
     ...(analysis.coreCards || []).map((name) => `- ${name}`),
   ].join("\n");
 
+  useEffect(() => {
+    setCutCount(requiredCuts || 3);
+  }, [requiredCuts]);
+
+  useEffect(() => {
+    setExportCopyStatus("idle");
+  }, [exportText]);
+
+  useEffect(() => {
+    setCutDecisions((current) => Object.fromEntries(Object.entries(current).filter(([name]) => candidateKeys.has(name))));
+  }, [candidateKeys]);
+
+  const setCandidateDecision = (name, decision) => {
+    setCutDecisions((current) => {
+      const key = normalizeName(name);
+      const next = { ...current };
+      if (decision) next[key] = decision;
+      else delete next[key];
+      return next;
+    });
+  };
+
+  const acceptRecommendedCuts = () => {
+    setCutDecisions((current) => {
+      const next = { ...current };
+      for (const candidate of requiredExportCuts) {
+        next[normalizeName(candidate.name)] = "cut";
+      }
+      return next;
+    });
+  };
+
+  const clearCutReview = () => {
+    setCutDecisions({});
+  };
+
+  const copyExportText = async () => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(exportText);
+      setExportCopyStatus("copied");
+    } catch {
+      setExportCopyStatus("error");
+    }
+  };
+
   const toggleExcludedRole = (role) => {
     setExcludedRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
   };
 
   return (
     <div className="space-y-4">
+      {requiredCuts > 0 && (
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-rose-300">Deck Size</div>
+              <h2 className="mt-1 text-xl font-semibold text-neutral-50">Need {requiredCuts} cut{requiredCuts === 1 ? "" : "s"} to reach {deckSizePlan.targetTotal || 100}</h2>
+              <p className="mt-1 text-sm text-neutral-400">{deckSizePlan.message}</p>
+              <p className="mt-2 text-sm text-neutral-300">{acceptedCutCountForTarget}/{requiredCuts} accepted cuts selected. Projected total after accepted cuts: {projectedTotal ?? "-"}.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[360px]">
+              <Metric label="Total" value={deckSizePlan.totalCards ?? "-"} tone="warn" />
+              <Metric label="Allowed" value={deckSizePlan.allowedTotal ?? "-"} tone="neutral" />
+              <Metric label="Target" value={deckSizePlan.targetTotal ?? 100} tone="good" />
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Finder</div>
-            <div className="mt-1 text-sm text-neutral-400">{filteredCandidates.length} cut candidates after filters</div>
+            <div className="mt-1 text-sm text-neutral-400">{filteredCandidates.length} cut candidates after filters{requiredCuts > 0 ? `; first ${requiredCuts} are marked as required cuts` : ""}</div>
+            <div className="mt-1 text-xs text-neutral-500">{acceptedCuts.length} marked cut, {keptCandidates.length} marked keep</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {[1, 3, 10].map((count) => (
+            {[requiredCuts, 1, 3, 10].filter((count, index, list) => count > 0 && list.indexOf(count) === index).map((count) => (
               <button
                 key={count}
                 type="button"
@@ -1491,11 +1827,74 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <section className="space-y-3">
           {visibleCandidates.length
-            ? visibleCandidates.map((candidate) => <CutCandidateCard key={candidate.name} candidate={candidate} cardMap={cardMap} analysisReady={analysisReady} />)
+            ? visibleCandidates.map((candidate) => (
+              <CutCandidateCard
+                key={candidate.name}
+                candidate={candidate}
+                cardMap={cardMap}
+                analysisReady={analysisReady}
+                decision={cutDecisions[normalizeName(candidate.name)]}
+                onDecision={setCandidateDecision}
+              />
+            ))
             : <div className={panelClass("p-4 text-sm text-neutral-500")}>No cut candidates match the current filters.</div>}
         </section>
 
         <aside className="space-y-4">
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Review</div>
+            <div className="mt-3 grid gap-2 text-sm">
+              <div className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <span className="text-neutral-300">Accepted cuts</span>
+                <span className="font-mono text-rose-200">{acceptedCuts.length}</span>
+              </div>
+              <div className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <span className="text-neutral-300">Kept candidates</span>
+                <span className="font-mono text-emerald-200">{keptCandidates.length}</span>
+              </div>
+              {requiredCuts > 0 && (
+                <div className={`rounded border px-3 py-2 ${acceptedCuts.length >= requiredCuts ? "border-emerald-900 bg-emerald-950/30 text-emerald-200" : "border-amber-900 bg-amber-950/30 text-amber-100"}`}>
+                  {acceptedCuts.length >= requiredCuts
+                    ? "Required cut count is covered."
+                    : `${remainingManualCuts} more cut${remainingManualCuts === 1 ? "" : "s"} still need confirmation.`}
+                </div>
+              )}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={acceptRecommendedCuts}
+                  disabled={!requiredExportCuts.length}
+                  className="min-h-9 rounded border border-rose-700 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+                >
+                  Accept recommended cuts
+                </button>
+                <button
+                  type="button"
+                  onClick={clearCutReview}
+                  disabled={!Object.keys(cutDecisions).length}
+                  className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
+                >
+                  Clear review
+                </button>
+              </div>
+              {requiredCuts > 0 && (
+                <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <div className="text-xs uppercase tracking-wide text-neutral-500">Projected Export Total</div>
+                  <div className={`mt-1 font-mono text-lg ${projectedExportMeetsTarget ? "text-emerald-200" : "text-amber-200"}`}>{projectedExportTotal ?? "-"}</div>
+                  <div className="mt-1 text-xs text-neutral-500">Includes accepted cuts plus automatic fill.</div>
+                </div>
+              )}
+              {autoFillCuts.length > 0 && (
+                <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                  <div className="text-xs uppercase tracking-wide text-neutral-500">Auto-fill Cuts</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {autoFillCuts.map((candidate) => <span key={candidate.name} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{candidate.name}</span>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className={panelClass("p-4")}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Needs</div>
             <div className="mt-3 space-y-2">
@@ -1525,20 +1924,33 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
             {compareLeft && compareRight && (
               <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                 {[compareLeft, compareRight].map((candidate) => (
-                  <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-950 p-3">
-                    <div className="font-semibold text-neutral-100">{candidate.name}</div>
-                    <div className={`mt-1 font-mono ${scoreColor(candidate.score)}`}>{candidate.score > 0 ? "+" : ""}{candidate.score}</div>
-                    <div className={`mt-2 inline-flex rounded border px-2 py-0.5 text-xs uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</div>
-                    <div className="mt-3 text-xs text-neutral-400">{candidate.reasons?.[0] || "No cut reason available."}</div>
-                    {(candidate.riskFlags || []).length > 0 && <div className="mt-2 text-xs text-amber-200">{candidate.riskFlags.join(" ")}</div>}
-                  </div>
+                  <CompareCandidatePanel
+                    key={candidate.name}
+                    candidate={candidate}
+                    decision={cutDecisions[normalizeName(candidate.name)]}
+                    onDecision={setCandidateDecision}
+                    analysisReady={analysisReady}
+                  />
                 ))}
               </div>
             )}
           </section>
 
           <section className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Export Changes</div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Export Changes</div>
+                <div className="mt-1 text-xs text-neutral-500">Copy this into Moxfield notes or your deckbuilding checklist.</div>
+              </div>
+              <button
+                type="button"
+                onClick={copyExportText}
+                className="min-h-9 shrink-0 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200"
+              >
+                {exportCopyStatus === "copied" ? "Copied" : "Copy change plan"}
+              </button>
+            </div>
+            {exportCopyStatus === "error" && <div className="mt-2 rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">Clipboard access was blocked. Select the text below to copy manually.</div>}
             <textarea readOnly value={exportText} className="mt-3 min-h-64 w-full rounded border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs leading-5 text-neutral-300" />
           </section>
         </aside>
@@ -1548,8 +1960,92 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
 }
 
 function UpgradesTab({ analysis, analysisReady }) {
+  const roadmap = analysis.roadmap || {};
+  const candidateAdds = [...analysis.sideboardAnalysis, ...analysis.consideringAnalysis];
+  const recommendedAdds = candidateAdds.filter((candidate) => candidate.recommendation === "add");
+  const maybeAdds = candidateAdds.filter((candidate) => candidate.recommendation === "maybe");
+  const [addPlanCopyStatus, setAddPlanCopyStatus] = useState("idle");
+  const addPlanText = [
+    "Add priorities",
+    ...((roadmap.steps || []).slice(0, 5).map((step) => `- ${step.label}: ${step.action}`)),
+    "",
+    "Suggested swaps",
+    ...((roadmap.upgradePairs || analysis.upgrades || []).slice(0, 5).map((upgrade) => `- Add ${upgrade.add}${upgrade.cut ? ` over ${upgrade.cut}` : ""}`)),
+    "",
+    "Candidate adds",
+    ...recommendedAdds.map((candidate) => `- ${candidate.name}: ${candidate.reason}`),
+    "",
+    "Maybe adds",
+    ...maybeAdds.slice(0, 5).map((candidate) => `- ${candidate.name}: ${candidate.reason}`),
+  ].join("\n");
+
+  useEffect(() => {
+    setAddPlanCopyStatus("idle");
+  }, [addPlanText]);
+
+  const copyAddPlan = async () => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(addPlanText);
+      setAddPlanCopyStatus("copied");
+    } catch {
+      setAddPlanCopyStatus("error");
+    }
+  };
+
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
+      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Add Plan</div>
+            <div className="mt-1 text-sm text-neutral-300">{roadmap.headline || "Use the current roadmap and candidate pool to decide what to add next."}</div>
+          </div>
+          <button
+            type="button"
+            onClick={copyAddPlan}
+            className="min-h-9 w-fit rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200"
+          >
+            {addPlanCopyStatus === "copied" ? "Copied" : "Copy add plan"}
+          </button>
+        </div>
+        {addPlanCopyStatus === "error" && <div className="mt-3 rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">Clipboard access was blocked. Use the add plan text below as the source of truth.</div>}
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+          <div className="space-y-2">
+            {(roadmap.steps || []).slice(0, 4).map((step, index) => (
+              <div key={`${step.label}-${index}`} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
+                <div className="text-xs uppercase tracking-wide text-neutral-500">Priority {index + 1}</div>
+                <div className="mt-1 text-sm font-semibold text-neutral-100">{step.label}</div>
+                <div className="mt-1 text-sm text-neutral-300">{step.action}</div>
+              </div>
+            ))}
+            {!(roadmap.steps || []).length && <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No add priorities are active yet.</div>}
+          </div>
+          <div className="grid gap-3">
+            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggested Adds</div>
+              <div className="mt-2 space-y-2">
+                {(roadmap.upgradePairs || []).length
+                  ? roadmap.upgradePairs.slice(0, 3).map((upgrade) => (
+                    <div key={`${upgrade.cut}-${upgrade.add}`} className="text-sm">
+                      <div className="font-semibold text-emerald-200">{upgrade.add}</div>
+                      <div className="text-xs text-neutral-500">{upgrade.cut ? `Use over ${upgrade.cut}` : upgrade.reason}</div>
+                    </div>
+                  ))
+                  : <div className="text-sm text-neutral-500">No specific add pairings yet.</div>}
+              </div>
+            </div>
+            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Candidate Pool</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {recommendedAdds.length
+                  ? recommendedAdds.slice(0, 8).map((candidate) => <span key={candidate.name} className="rounded border border-emerald-800 px-2 py-0.5 text-xs text-emerald-200">{candidate.name}</span>)
+                  : <span className="text-sm text-neutral-500">No add-ready sideboard or considering cards.</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended Swaps</div>
         <div className="mt-3 space-y-3">
@@ -1597,7 +2093,7 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
     <section className={panelClass("p-4 sm:p-5")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Debug</div>
       <pre className="mt-3 max-h-[640px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">
-        {JSON.stringify({ deck, commanderProfile: analysis.commanderProfile, scorecard: analysis.scorecard, cutCandidates: analysis.cutCandidates, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
+        {JSON.stringify({ deck, commanderProfile: analysis.commanderProfile, deckSizePlan: analysis.deckSizePlan, scorecard: analysis.scorecard, cutCandidates: analysis.cutCandidates, roadmap: analysis.roadmap, actionPlan: analysis.actionPlan, settings: analysis.settings, coreCards: analysis.coreCards, structure: analysis.structure, priorityFindings: analysis.priorityFindings, bracket: analysis.bracket, notFound, indexedCards: Object.keys(cardMap).length }, null, 2)}
       </pre>
     </section>
   );
@@ -1727,7 +2223,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
           <CalculatingAnalysisPanel />
         ) : (
           <>
-            {activeTab === "scorecard" && <ScorecardTab analysis={analysis} settings={analysisSettings} setSettings={setAnalysisSettings} analysisReady={analysisReady} />}
+            {activeTab === "scorecard" && <ScorecardTab analysis={analysis} settings={analysisSettings} setSettings={setAnalysisSettings} setActiveTab={setActiveTab} analysisReady={analysisReady} />}
             {activeTab === "overview" && <OverviewTab analysis={analysis} deck={deck} />}
             {activeTab === "structure" && <StructureTab analysis={analysis} />}
             {activeTab === "power" && <PowerTab analysis={analysis} analysisReady={analysisReady} />}

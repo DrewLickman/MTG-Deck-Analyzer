@@ -133,18 +133,23 @@ test("cuts tab renders exact required cut count controls", () => {
 });
 
 test("cuts tab renders a deck-wide visual tier list", () => {
-  assert.match(source, /const TIER_ORDER = \["S", "A", "B", "C", "D", "F"\]/);
-  assert.match(source, /function tierForCard\(item, decision\)/);
-  assert.match(source, /function buildTierRows\(\{ analysis, cardMap, cutDecisions \}\)/);
-  assert.match(source, /for \(const score of analysis\.scores \|\| \[\]\)/);
+  assert.match(source, /import \{ buildTierRows \} from "\.\/lib\/deckTiers\.mjs"/);
+  assert.match(source, /S: \{ label: "S"/);
+  assert.match(source, /F: \{ label: "F"/);
   assert.match(source, /function TierListCard/);
   assert.match(source, /cardPreviewUrl\(item\.card\)/);
+  assert.match(source, /<ManaCostDisplay card=\{item\.card\} \/>/);
+  assert.match(source, /flex min-h-40 flex-1 flex-col/);
+  assert.doesNotMatch(source, /absolute inset-x-0 bottom-0/);
+  assert.doesNotMatch(source, /backdrop-blur-sm/);
   assert.match(source, /function DeckTierList/);
+  assert.match(source, /const tierRows = useMemo\(\(\) => buildTierRows/);
   assert.match(source, /<DeckTierList/);
   assert.match(source, /cutDecisions=\{cutDecisions\}/);
   assert.match(source, /decision === "cut"/);
   assert.match(source, /decision === "keep"/);
   assert.match(source, /Cut filters below do not hide cards here/);
+  assert.match(source, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5/);
 });
 
 test("cut export uses visible required cuts first", () => {

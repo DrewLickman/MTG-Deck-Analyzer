@@ -1512,6 +1512,174 @@ const CUT_EXCLUDE_OPTIONS = [
   { id: "core", label: "Core" },
 ];
 
+const TIER_ORDER = ["S", "A", "B", "C", "D", "F"];
+const TIER_META = {
+  S: { label: "S", summary: "Core includes", className: "border-emerald-700 bg-emerald-950/30 text-emerald-100" },
+  A: { label: "A", summary: "Strong includes", className: "border-sky-700 bg-sky-950/30 text-sky-100" },
+  B: { label: "B", summary: "Good role players", className: "border-blue-700 bg-blue-950/30 text-blue-100" },
+  C: { label: "C", summary: "Neutral slots", className: "border-neutral-600 bg-neutral-900 text-neutral-100" },
+  D: { label: "D", summary: "Cuttable", className: "border-amber-700 bg-amber-950/30 text-amber-100" },
+  F: { label: "F", summary: "Cut first", className: "border-rose-700 bg-rose-950/35 text-rose-100" },
+};
+
+function tierForCard(item, decision) {
+  const score = item.score ?? 0;
+  const candidate = item.cutCandidate;
+  const rank = candidate?.rank ?? 0;
+  let tier = "C";
+
+  if (decision === "cut") return "F";
+  if (candidate?.sizeCutRecommended || (candidate?.confidence === "high" && rank >= 6) || score <= -4) tier = "F";
+  else if (item.protected || item.zone === "commanders" || score >= 7) tier = "S";
+  else if (score >= 4) tier = "A";
+  else if (score >= 1) tier = "B";
+  else if (score === 0) tier = "C";
+  else if (score >= -3) tier = "D";
+
+  if (tier !== "F" && (candidate?.confidence === "low" || rank >= 3)) tier = "D";
+  if (decision === "keep" && (tier === "D" || tier === "F")) return "C";
+  return tier;
+}
+
+function buildTierRows({ analysis, cardMap, cutDecisions }) {
+  const cutCandidates = analysis.cutCandidates || [];
+  const cutsByName = new Map(cutCandidates.map((candidate) => [normalizeName(candidate.name), candidate]));
+  const itemsByName = new Map();
+
+  for (const score of analysis.scores || []) {
+    const key = normalizeName(score.name);
+    const card = findCard(cardMap, score.name);
+    const cutCandidate = cutsByName.get(key);
+    itemsByName.set(key, {
+      name: score.name,
+      score: score.score,
+      note: score.note,
+      roles: score.roles?.length ? score.roles : getRoleKeys(card),
+      protected: score.protected,
+      zone: score.zone,
+      card,
+      cutCandidate,
+      decision: cutDecisions[key],
+    });
+  }
+
+  for (const candidate of cutCandidates) {
+    const key = normalizeName(candidate.name);
+    if (itemsByName.has(key)) continue;
+    const card = findCard(cardMap, candidate.name);
+    itemsByName.set(key, {
+      name: candidate.name,
+      score: candidate.score ?? 0,
+      note: candidate.cutReason?.[0] || candidate.reasons?.[0],
+      roles: candidate.roles?.length ? candidate.roles : getRoleKeys(card),
+      protected: candidate.protected,
+      zone: "main",
+      card,
+      cutCandidate: candidate,
+      decision: cutDecisions[key],
+    });
+  }
+
+  const rows = Object.fromEntries(TIER_ORDER.map((tier) => [tier, []]));
+  for (const item of itemsByName.values()) {
+    rows[tierForCard(item, item.decision)].push(item);
+  }
+
+  return TIER_ORDER.map((tier) => ({
+    tier,
+    cards: rows[tier].sort((a, b) => {
+      const aRank = a.cutCandidate?.rank ?? -99;
+      const bRank = b.cutCandidate?.rank ?? -99;
+      if (tier === "F" || tier === "D") return bRank - aRank || a.score - b.score || a.name.localeCompare(b.name);
+      return b.score - a.score || a.name.localeCompare(b.name);
+    }),
+  }));
+}
+
+function TierListCard({ item, analysisReady, onDecision }) {
+  const imageUrl = cardPreviewUrl(item.card);
+  const candidate = item.cutCandidate;
+  const decision = item.decision;
+  return (
+    <article className="group relative min-w-[128px] max-w-[150px] overflow-hidden rounded border border-neutral-800 bg-neutral-950 shadow-lg sm:min-w-[148px]">
+      {imageUrl ? (
+        <img src={imageUrl} alt={item.name} className="aspect-[5/7] w-full object-cover" loading="lazy" />
+      ) : (
+        <div className="flex aspect-[5/7] w-full items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 bg-neutral-950/92 p-2 backdrop-blur-sm">
+        <div className="line-clamp-2 text-xs font-semibold leading-snug text-neutral-100">{item.name}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          <span className={`rounded border border-neutral-700 bg-neutral-950 px-1.5 py-0.5 font-mono text-[11px] ${analysisReady ? scoreColor(item.score) : "text-neutral-400"}`}>
+            {analysisReady ? `${item.score > 0 ? "+" : ""}${item.score}` : "..."}
+          </span>
+          {candidate && <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>}
+          {candidate?.sizeCutRecommended && <span className="rounded border border-rose-700 bg-rose-950/50 px-1.5 py-0.5 text-[10px] uppercase text-rose-100">required</span>}
+          {decision && <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase ${decision === "cut" ? "border-rose-700 text-rose-100" : "border-emerald-700 text-emerald-100"}`}>{decision}</span>}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {(item.roles || []).slice(0, 2).map((role) => <RoleChip key={role} role={role} />)}
+          {(item.roles || []).length > 2 && <span className="rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">+{item.roles.length - 2}</span>}
+        </div>
+        {candidate && (
+          <div className="mt-2 grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => onDecision(item.name, decision === "cut" ? null : "cut")}
+              className={`min-h-7 rounded border px-2 py-1 text-[11px] font-semibold ${decision === "cut" ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-200 hover:border-rose-500 hover:text-rose-100"}`}
+            >
+              Cut
+            </button>
+            <button
+              type="button"
+              onClick={() => onDecision(item.name, decision === "keep" ? null : "keep")}
+              className={`min-h-7 rounded border px-2 py-1 text-[11px] font-semibold ${decision === "keep" ? "border-emerald-500 bg-emerald-500 text-neutral-950" : "border-neutral-700 text-neutral-200 hover:border-emerald-500 hover:text-emerald-100"}`}
+            >
+              Keep
+            </button>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function DeckTierList({ analysis, cardMap, cutDecisions, onDecision, analysisReady }) {
+  const tierRows = useMemo(() => buildTierRows({ analysis, cardMap, cutDecisions }), [analysis, cardMap, cutDecisions]);
+  const totalCards = tierRows.reduce((sum, row) => sum + row.cards.length, 0);
+  return (
+    <section className={panelClass("overflow-hidden")}>
+      <div className="border-b border-neutral-800 p-4 sm:p-5">
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Tier List</div>
+        <div className="mt-1 text-sm text-neutral-400">{totalCards} cards grouped from strongest includes to first cuts. Cut filters below do not hide cards here.</div>
+      </div>
+      <div className="divide-y divide-neutral-800">
+        {tierRows.map((row) => {
+          const meta = TIER_META[row.tier];
+          return (
+            <div key={row.tier} className="grid gap-3 p-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:p-4">
+              <div className={`flex min-h-20 items-center justify-between gap-3 rounded border px-3 py-2 sm:flex-col sm:items-start sm:justify-center ${meta.className}`}>
+                <div className="text-3xl font-bold leading-none">{meta.label}</div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide">{meta.summary}</div>
+                  <div className="mt-1 font-mono text-xs opacity-80">{row.cards.length} card{row.cards.length === 1 ? "" : "s"}</div>
+                </div>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {row.cards.length
+                  ? row.cards.map((item) => (
+                    <TierListCard key={item.name} item={item} analysisReady={analysisReady} onDecision={onDecision} />
+                  ))
+                  : <div className="flex min-h-40 items-center text-sm text-neutral-500">No cards in this tier.</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function CutCandidateCard({ candidate, cardMap, analysisReady, decision, onDecision }) {
   const card = findCard(cardMap, candidate.name);
   const decisionClasses = decision === "cut"
@@ -1823,6 +1991,14 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
           ))}
         </div>
       </section>
+
+      <DeckTierList
+        analysis={analysis}
+        cardMap={cardMap}
+        cutDecisions={cutDecisions}
+        onDecision={setCandidateDecision}
+        analysisReady={analysisReady}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <section className="space-y-3">

@@ -132,6 +132,21 @@ test("cuts tab renders exact required cut count controls", () => {
   assert.match(source, /sizeCutRecommended/);
 });
 
+test("cuts tab renders a deck-wide visual tier list", () => {
+  assert.match(source, /const TIER_ORDER = \["S", "A", "B", "C", "D", "F"\]/);
+  assert.match(source, /function tierForCard\(item, decision\)/);
+  assert.match(source, /function buildTierRows\(\{ analysis, cardMap, cutDecisions \}\)/);
+  assert.match(source, /for \(const score of analysis\.scores \|\| \[\]\)/);
+  assert.match(source, /function TierListCard/);
+  assert.match(source, /cardPreviewUrl\(item\.card\)/);
+  assert.match(source, /function DeckTierList/);
+  assert.match(source, /<DeckTierList/);
+  assert.match(source, /cutDecisions=\{cutDecisions\}/);
+  assert.match(source, /decision === "cut"/);
+  assert.match(source, /decision === "keep"/);
+  assert.match(source, /Cut filters below do not hide cards here/);
+});
+
 test("cut export uses visible required cuts first", () => {
   assert.match(source, /requiredExportCuts/);
   assert.match(source, /additionalCutIdeas/);

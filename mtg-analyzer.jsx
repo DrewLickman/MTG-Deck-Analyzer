@@ -2263,7 +2263,7 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                <Metric label="Lands" value={result.metrics.lands} tone={result.metrics.lands >= 2 && result.metrics.lands <= 4 ? "good" : "bad"} />
+                <Metric label="Colored sources" value={result.metrics.coloredSources} tone={result.metrics.coloredSources >= 2 && result.metrics.coloredSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} total lands`} />
                 <Metric label="Early plays" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
                 <Metric label="Ramp" value={result.metrics.ramp} />
                 <Metric label="Card flow" value={result.metrics.cardFlow} />

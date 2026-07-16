@@ -9,6 +9,7 @@ function card(name, options = {}) {
     oracle_text: options.oracle_text || "",
     cmc: options.cmc ?? 2,
     mana_cost: options.mana_cost || "{1}{G}",
+    produced_mana: options.produced_mana,
   };
 }
 
@@ -29,7 +30,11 @@ test("each opening hand starts from the full main deck", () => {
 });
 
 test("opening-hand analysis rewards balanced mana, early action, and card flow", () => {
-  const lands = ["Forest", "Island", "Command Tower"].map((name) => card(name, { type_line: "Land", cmc: 0, mana_cost: "" }));
+  const lands = [
+    card("Forest", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("Island", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    card("Command Tower", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["W", "U", "B", "R", "G"] }),
+  ];
   const ramp = card("Nature's Lore", { oracle_text: "Search your library for a Forest card, put that card onto the battlefield.", cmc: 2 });
   const draw = card("Chart a Course", { oracle_text: "Draw two cards, then discard a card.", cmc: 2 });
   const engine = card("Token Engine", { oracle_text: "Whenever you cast a spell, create a 1/1 token.", cmc: 2 });
@@ -46,8 +51,41 @@ test("opening-hand analysis rewards balanced mana, early action, and card flow",
   assert.ok(analysis.score >= 78);
   assert.equal(analysis.verdict.label, "Strong keep");
   assert.equal(analysis.metrics.lands, 3);
+  assert.equal(analysis.metrics.coloredSources, 3);
   assert.ok(analysis.metrics.earlyPlays >= 3);
   assert.ok(analysis.strengths.some((item) => item.includes("functional mana base")));
+});
+
+test("colorless-only and non-mana lands do not support a strong keep", () => {
+  const wastes = card("Wastes", { type_line: "Basic Land — Wastes", cmc: 0, mana_cost: "", produced_mana: ["C"] });
+  const ancientTomb = card("Ancient Tomb", { type_line: "Land", oracle_text: "{T}: Add {C}{C}.", cmc: 0, mana_cost: "", produced_mana: ["C"] });
+  const maze = card("Maze of Ith", { type_line: "Land", oracle_text: "Untap target attacking creature. Prevent all combat damage.", cmc: 0, mana_cost: "", produced_mana: [] });
+  const spells = [
+    card("Cheap Draw", { type_line: "Instant", oracle_text: "Draw two cards.", cmc: 1 }),
+    card("Cheap Ramp", { oracle_text: "Search your library for a basic land card, put it onto the battlefield.", cmc: 2 }),
+    card("Cheap Engine", { type_line: "Artifact", oracle_text: "Whenever you cast a spell, create a token.", cmc: 2 }),
+    card("Cheap Answer", { type_line: "Instant", oracle_text: "Destroy target creature.", cmc: 1 }),
+  ];
+  const coloredLands = [
+    card("Plains", { type_line: "Basic Land — Plains", cmc: 0, mana_cost: "", produced_mana: ["W"] }),
+    card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+  ];
+  const cards = [wastes, ancientTomb, maze, ...spells, ...coloredLands];
+  const hand = [wastes, ancientTomb, maze, ...spells].map((item) => ({ name: item.name }));
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand,
+    cardMap: mapOf(cards),
+  });
+
+  assert.equal(result.metrics.lands, 3);
+  assert.equal(result.metrics.coloredSources, 0);
+  assert.equal(result.metrics.nonColoredLands, 3);
+  assert.notEqual(result.verdict.label, "Strong keep");
+  assert.ok(result.concerns.some((item) => item.includes("cannot produce colored mana")));
+  assert.equal(result.glueNeeds[0].key, "manaSources");
+  assert.deepEqual(result.glueNeeds[0].examples.map((item) => item.name), ["Forest", "Island", "Plains"]);
 });
 
 test("glue recommendations group repairs by missing category with up to three examples", () => {
@@ -66,7 +104,7 @@ test("glue recommendations group repairs by missing category with up to three ex
   });
 
   assert.equal(result.verdict.label, "Mulligan");
-  assert.ok(result.concerns.some((item) => item.includes("Only 1 land")));
+  assert.ok(result.concerns.some((item) => item.includes("Only 1 colored mana source")));
   assert.equal(result.glueNeeds[0].key, "manaSources");
   assert.equal(result.glueNeeds[0].label, "Mana Sources");
   assert.ok(result.glueNeeds[0].examples.some((item) => ["Island", "Command Tower"].includes(item.name)));

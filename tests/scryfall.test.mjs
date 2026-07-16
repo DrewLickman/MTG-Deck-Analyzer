@@ -12,6 +12,7 @@ test("basic land seeds use the English SOS full-art Spellcraft cycle", () => {
     assert.equal(results[name].set, "sos");
     assert.equal(results[name].lang, "en");
     assert.equal(results[name].full_art, true);
+    assert.ok(results[name].produced_mana.some((symbol) => ["W", "U", "B", "R", "G"].includes(symbol)));
     assert.equal(results[name].image_uris.normal, SOS_FULL_ART_BASICS[name].image_uris.normal);
     assert.match(results[name].image_uris.normal, /^https:\/\/cards\.scryfall\.io\/normal\//);
   }

@@ -50,7 +50,7 @@ test("opening-hand analysis rewards balanced mana, early action, and card flow",
   assert.ok(analysis.strengths.some((item) => item.includes("functional mana base")));
 });
 
-test("glue recommendations identify cards from the remaining deck that repair the hand", () => {
+test("glue recommendations group repairs by missing category with up to three examples", () => {
   const forest = card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "" });
   const island = card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "" });
   const tower = card("Command Tower", { type_line: "Land", cmc: 0, mana_cost: "" });
@@ -67,6 +67,10 @@ test("glue recommendations identify cards from the remaining deck that repair th
 
   assert.equal(result.verdict.label, "Mulligan");
   assert.ok(result.concerns.some((item) => item.includes("Only 1 land")));
-  assert.ok(result.glueCards.some((item) => ["Island", "Command Tower"].includes(item.name)));
-  assert.ok(result.glueCards.every((item) => item.improvement > 0));
+  assert.equal(result.glueNeeds[0].key, "manaSources");
+  assert.equal(result.glueNeeds[0].label, "Mana Sources");
+  assert.ok(result.glueNeeds[0].examples.some((item) => ["Island", "Command Tower"].includes(item.name)));
+  assert.ok(result.glueNeeds.every((need) => need.examples.length <= 3));
+  assert.ok(result.glueNeeds.flatMap((need) => need.examples).every((item) => item.improvement > 0));
+  assert.match(result.glueSummary, /missing categories/);
 });

@@ -2293,20 +2293,27 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
           </section>
 
           <section className={panelClass("p-4 sm:p-5")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cards that hold the hand together</div>
-            <h3 className="mt-1 text-xl font-bold text-neutral-50">Glue cards</h3>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">What this hand is missing</div>
+            <h3 className="mt-1 text-xl font-bold text-neutral-50">Glue categories</h3>
             <p className="mt-2 text-sm text-neutral-400">{result.glueSummary}</p>
-            {result.glueCards.length > 0 && (
+            {result.glueNeeds.length > 0 && (
               <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {result.glueCards.map((glue) => (
-                  <article key={glue.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+                {result.glueNeeds.map((need) => (
+                  <article key={need.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <CardPreview card={findCard(cardMap, glue.name)} name={glue.name} />
-                      <span className="rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 font-mono text-xs text-emerald-300">+{glue.improvement} hand score</span>
+                      <div className="font-semibold text-neutral-100">{need.label}</div>
+                      <span className="rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 font-mono text-xs text-emerald-300">up to +{need.improvement}</span>
                     </div>
-                    <div className="mt-3 text-sm text-neutral-300">{glue.reason}</div>
-                    <div className="mt-3 text-xs text-neutral-500">Best swap: {glue.name} for {glue.replaces} · projected {glue.resultingScore}/100</div>
-                    <div className="mt-3 flex flex-wrap gap-1">{glue.roles.slice(0, 4).map((role) => <RoleChip key={role} role={role} />)}</div>
+                    <div className="mt-2 text-sm text-neutral-300">{need.detail}</div>
+                    <div className="mt-4 text-[11px] uppercase tracking-wide text-neutral-500">Examples from this deck</div>
+                    <div className="mt-2 space-y-2">
+                      {need.examples.map((example) => (
+                        <div key={example.name} className="flex items-center justify-between gap-3 rounded border border-neutral-800 bg-neutral-900/60 px-2.5 py-2">
+                          <CardPreview card={findCard(cardMap, example.name)} name={example.name} />
+                          <span className="shrink-0 font-mono text-xs text-emerald-300">+{example.improvement}</span>
+                        </div>
+                      ))}
+                    </div>
                   </article>
                 ))}
               </div>

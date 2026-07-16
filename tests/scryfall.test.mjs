@@ -1,7 +1,48 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchScryfall } from "../lib/scryfall.mjs";
-import { SCRYFALL_BATCH_SIZE } from "../lib/cardUtils.mjs";
+import { fetchScryfall, seedScryfallResults } from "../lib/scryfall.mjs";
+import { SCRYFALL_BATCH_SIZE, SOS_FULL_ART_BASICS } from "../lib/cardUtils.mjs";
+
+test("basic land seeds use the English SOS full-art Spellcraft cycle", () => {
+  const names = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
+  const results = seedScryfallResults(names);
+
+  assert.deepEqual(names.map((name) => results[name].collector_number), ["267", "268", "269", "270", "271"]);
+  for (const name of names) {
+    assert.equal(results[name].set, "sos");
+    assert.equal(results[name].lang, "en");
+    assert.equal(results[name].full_art, true);
+    assert.equal(results[name].image_uris.normal, SOS_FULL_ART_BASICS[name].image_uris.normal);
+    assert.match(results[name].image_uris.normal, /^https:\/\/cards\.scryfall\.io\/normal\//);
+  }
+});
+
+test("Wastes still receives live Scryfall image enrichment because SOS has no Wastes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /\/cards\/collection/);
+    return {
+      ok: true,
+      json: async () => ({
+        data: [{
+          name: "Wastes",
+          cmc: 0,
+          mana_cost: "",
+          type_line: "Basic Land — Wastes",
+          image_uris: { normal: "https://cards.scryfall.io/normal/wastes.jpg" },
+        }],
+        not_found: [],
+      }),
+    };
+  };
+
+  try {
+    const result = await fetchScryfall(["Wastes"]);
+    assert.equal(result.results.Wastes.image_uris.normal, "https://cards.scryfall.io/normal/wastes.jpg");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("retries unresolved split cards with normalized named lookups", async () => {
   const calls = [];

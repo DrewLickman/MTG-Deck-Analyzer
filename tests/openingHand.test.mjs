@@ -1,0 +1,72 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { analyzeOpeningHand, drawOpeningHand } from "../lib/openingHand.mjs";
+
+function card(name, options = {}) {
+  return {
+    name,
+    type_line: options.type_line || "Sorcery",
+    oracle_text: options.oracle_text || "",
+    cmc: options.cmc ?? 2,
+    mana_cost: options.mana_cost || "{1}{G}",
+  };
+}
+
+function mapOf(cards) {
+  return Object.fromEntries(cards.flatMap((item) => [[item.name, item], [item.name.toLowerCase(), item]]));
+}
+
+test("each opening hand starts from the full main deck", () => {
+  const deck = {
+    main: Array.from({ length: 8 }, (_, index) => ({ qty: 1, name: `Card ${index + 1}` })),
+  };
+  const first = drawOpeningHand(deck, () => 0);
+  const second = drawOpeningHand(deck, () => 0);
+
+  assert.equal(first.length, 7);
+  assert.deepEqual(second, first);
+  assert.equal(deck.main.length, 8);
+});
+
+test("opening-hand analysis rewards balanced mana, early action, and card flow", () => {
+  const lands = ["Forest", "Island", "Command Tower"].map((name) => card(name, { type_line: "Land", cmc: 0, mana_cost: "" }));
+  const ramp = card("Nature's Lore", { oracle_text: "Search your library for a Forest card, put that card onto the battlefield.", cmc: 2 });
+  const draw = card("Chart a Course", { oracle_text: "Draw two cards, then discard a card.", cmc: 2 });
+  const engine = card("Token Engine", { oracle_text: "Whenever you cast a spell, create a 1/1 token.", cmc: 2 });
+  const removal = card("Quick Answer", { type_line: "Instant", oracle_text: "Destroy target creature.", cmc: 1 });
+  const cards = [...lands, ramp, draw, engine, removal];
+  const hand = cards.map((item) => ({ name: item.name }));
+  const analysis = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand,
+    cardMap: mapOf(cards),
+    coreCards: ["Token Engine"],
+  });
+
+  assert.ok(analysis.score >= 78);
+  assert.equal(analysis.verdict.label, "Strong keep");
+  assert.equal(analysis.metrics.lands, 3);
+  assert.ok(analysis.metrics.earlyPlays >= 3);
+  assert.ok(analysis.strengths.some((item) => item.includes("functional mana base")));
+});
+
+test("glue recommendations identify cards from the remaining deck that repair the hand", () => {
+  const forest = card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "" });
+  const island = card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "" });
+  const tower = card("Command Tower", { type_line: "Land", cmc: 0, mana_cost: "" });
+  const expensive = Array.from({ length: 6 }, (_, index) => card(`Expensive ${index + 1}`, { type_line: "Creature", cmc: 6 + index }));
+  const selection = card("Hand Smoother", { type_line: "Instant", oracle_text: "Scry 2, then draw a card.", cmc: 1 });
+  const cards = [forest, island, tower, ...expensive, selection];
+  const hand = [forest, ...expensive].map((item) => ({ name: item.name }));
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand,
+    cardMap: mapOf(cards),
+    analysis: { scores: [{ name: "Hand Smoother", score: 8 }] },
+  });
+
+  assert.equal(result.verdict.label, "Mulligan");
+  assert.ok(result.concerns.some((item) => item.includes("Only 1 land")));
+  assert.ok(result.glueCards.some((item) => ["Island", "Command Tower"].includes(item.name)));
+  assert.ok(result.glueCards.every((item) => item.improvement > 0));
+});

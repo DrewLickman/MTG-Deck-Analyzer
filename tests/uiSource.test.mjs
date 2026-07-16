@@ -63,6 +63,19 @@ test("analysis tabs are organized by user job", () => {
   assert.match(source, /function ManaTab/);
 });
 
+test("mulligan lab draws independent hands and renders strength and glue analysis", () => {
+  assert.match(source, /\{ id: "mulligan", label: "Mulligan" \}/);
+  assert.match(source, /function MulliganTab/);
+  assert.match(source, /drawOpeningHand\(deck\)/);
+  assert.match(source, /analyzeOpeningHand\(\{ deck, hand, cardMap, analysis, coreCards \}\)/);
+  assert.match(source, /Every attempt reshuffles the complete main deck/);
+  assert.match(source, /Opening Hand Lab/);
+  assert.match(source, /result\.verdict\.label/);
+  assert.match(source, /Glue cards/);
+  assert.match(source, /glue\.improvement/);
+  assert.match(source, /activeTab === "mulligan"/);
+});
+
 test("home renders a build roadmap for deckbuilding decisions", () => {
   assert.match(source, /const roadmap = analysis\.roadmap/);
   assert.match(source, /Build Roadmap/);

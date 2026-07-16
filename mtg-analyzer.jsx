@@ -6,6 +6,7 @@ import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, 
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
+import { analyzeOpeningHand, drawOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TABS = [
@@ -15,6 +16,7 @@ const TABS = [
   { id: "power", label: "Power" },
   { id: "mana", label: "Mana" },
   { id: "cards", label: "Cards" },
+  { id: "mulligan", label: "Mulligan" },
   { id: "cuts", label: "Cuts" },
   { id: "upgrades", label: "Upgrades" },
   { id: "debug", label: "Debug" },
@@ -2193,6 +2195,143 @@ function UpgradesTab({ analysis, analysisReady }) {
   );
 }
 
+function HandCard({ item }) {
+  const imageUrl = cardPreviewUrl(item.card);
+  return (
+    <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+      {imageUrl ? (
+        <img src={imageUrl} alt={item.name} className="aspect-[5/7] w-full object-cover" loading="lazy" />
+      ) : (
+        <div className="flex aspect-[5/7] items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
+      )}
+      <div className="flex flex-1 flex-col gap-2 p-2.5">
+        <div className="text-sm font-semibold leading-tight text-neutral-100">{item.name}</div>
+        <div className="mt-auto flex flex-wrap gap-1">
+          {item.roles.slice(0, 3).map((role) => <RoleChip key={role} role={role} />)}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MulliganTab({ analysis, deck, cardMap, coreCards }) {
+  const [attempts, setAttempts] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const attemptNumber = useRef(0);
+
+  const drawHand = () => {
+    const hand = drawOpeningHand(deck);
+    const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
+    attemptNumber.current += 1;
+    const attempt = { id: attemptNumber.current, hand, result };
+    setAttempts((current) => [attempt, ...current].slice(0, 8));
+    setSelectedId(attempt.id);
+  };
+
+  const selected = attempts.find((attempt) => attempt.id === selectedId) || attempts[0];
+  const result = selected?.result;
+
+  return (
+    <div className="space-y-5">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
+            <h3 className="mt-1 text-2xl font-bold text-neutral-50">Opening Hand Lab</h3>
+            <p className="mt-2 max-w-2xl text-sm text-neutral-400">Every attempt reshuffles the complete main deck and draws a fresh seven. Previous attempts never remove cards from the next mulligan.</p>
+          </div>
+          <button type="button" onClick={drawHand} className="min-h-12 rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400">
+            {attempts.length ? "Draw fresh seven" : "Draw opening hand"}
+          </button>
+        </div>
+      </section>
+
+      {!result ? (
+        <section className={panelClass("p-8 text-center")}>
+          <div className="text-lg font-semibold text-neutral-200">Ready for a first hand</div>
+          <div className="mt-2 text-sm text-neutral-500">Draw seven to grade the hand and find the cards that would best hold it together.</div>
+        </section>
+      ) : (
+        <>
+          <section className={panelClass("p-4 sm:p-5")}>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Attempt {selected.id}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <h3 className="text-3xl font-bold text-neutral-50">{result.verdict.label}</h3>
+                  <span className={`rounded-lg border px-3 py-1 font-mono text-lg font-bold ${statusClasses(result.verdict.status)}`}>{result.score}/100</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                <Metric label="Lands" value={result.metrics.lands} tone={result.metrics.lands >= 2 && result.metrics.lands <= 4 ? "good" : "bad"} />
+                <Metric label="Early plays" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
+                <Metric label="Ramp" value={result.metrics.ramp} />
+                <Metric label="Card flow" value={result.metrics.cardFlow} />
+                <Metric label="Interaction" value={result.metrics.interaction} />
+                <Metric label="Engine" value={result.metrics.engineAccess} />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+              {result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">What works</div>
+                <div className="mt-3 space-y-2 text-sm text-neutral-300">
+                  {result.strengths.length ? result.strengths.map((item) => <div key={item}>• {item}</div>) : <div>No clear structural strength was detected.</div>}
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-300">Keep risk</div>
+                <div className="mt-3 space-y-2 text-sm text-neutral-300">
+                  {result.concerns.length ? result.concerns.map((item) => <div key={item}>• {item}</div>) : <div>No major opening-hand weakness was detected.</div>}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className={panelClass("p-4 sm:p-5")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cards that hold the hand together</div>
+            <h3 className="mt-1 text-xl font-bold text-neutral-50">Glue cards</h3>
+            <p className="mt-2 text-sm text-neutral-400">{result.glueSummary}</p>
+            {result.glueCards.length > 0 && (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {result.glueCards.map((glue) => (
+                  <article key={glue.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <CardPreview card={findCard(cardMap, glue.name)} name={glue.name} />
+                      <span className="rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 font-mono text-xs text-emerald-300">+{glue.improvement} hand score</span>
+                    </div>
+                    <div className="mt-3 text-sm text-neutral-300">{glue.reason}</div>
+                    <div className="mt-3 text-xs text-neutral-500">Best swap: {glue.name} for {glue.replaces} · projected {glue.resultingScore}/100</div>
+                    <div className="mt-3 flex flex-wrap gap-1">{glue.roles.slice(0, 4).map((role) => <RoleChip key={role} role={role} />)}</div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {attempts.length > 1 && (
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {attempts.map((attempt) => (
+              <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`rounded-lg border px-3 py-2 text-left text-sm ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}>
+                <span className="font-semibold">#{attempt.id} {attempt.result.verdict.label}</span>
+                <span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function DebugTab({ analysis, deck, cardMap, notFound }) {
   return (
     <section className={panelClass("p-4 sm:p-5")}>
@@ -2348,6 +2487,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
                 analysisReady={analysisReady}
               />
             )}
+            {activeTab === "mulligan" && <MulliganTab analysis={analysis} deck={deck} cardMap={cardMap} coreCards={coreCards} />}
             {activeTab === "cuts" && <CutsTab analysis={analysis} cardMap={cardMap} analysisReady={analysisReady} />}
             {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} />}
             {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}

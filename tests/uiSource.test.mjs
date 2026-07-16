@@ -77,6 +77,10 @@ test("mulligan lab draws independent hands and renders strength and glue analysi
   assert.match(source, /result\.glueNeeds/);
   assert.match(source, /need\.examples/);
   assert.match(source, /Examples from this deck/);
+  assert.match(source, /Select your opening hand/);
+  assert.match(source, /Analyze selected hand/);
+  assert.match(source, /addCardToOpeningHand/);
+  assert.match(source, /manualHand\.length !== 7/);
   assert.doesNotMatch(source, /result\.glueCards/);
   assert.match(source, /activeTab === "mulligan"/);
 });

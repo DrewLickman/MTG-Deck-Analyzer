@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzeOpeningHand, drawOpeningHand } from "../lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "../lib/openingHand.mjs";
 
 function card(name, options = {}) {
   return {
@@ -27,6 +27,29 @@ test("each opening hand starts from the full main deck", () => {
   assert.equal(first.length, 7);
   assert.deepEqual(second, first);
   assert.equal(deck.main.length, 8);
+});
+
+test("manual opening-hand selection respects deck quantities and seven-card limit", () => {
+  const deck = {
+    main: [
+      { qty: 2, name: "Forest" },
+      ...Array.from({ length: 6 }, (_, index) => ({ qty: 1, name: `Spell ${index + 1}` })),
+    ],
+  };
+  let hand = [];
+  hand = addCardToOpeningHand(deck, hand, "forest");
+  hand = addCardToOpeningHand(deck, hand, "Forest");
+  hand = addCardToOpeningHand(deck, hand, "Forest");
+  assert.deepEqual(hand, [{ name: "Forest", copyIndex: 0 }, { name: "Forest", copyIndex: 1 }]);
+
+  for (let index = 1; index <= 6; index += 1) hand = addCardToOpeningHand(deck, hand, `Spell ${index}`);
+  assert.equal(hand.length, 7);
+  assert.equal(hand.some((entry) => entry.name === "Spell 6"), false);
+
+  hand = removeCardFromOpeningHand(hand, 0);
+  assert.equal(hand.length, 6);
+  hand = addCardToOpeningHand(deck, hand, "Forest");
+  assert.equal(hand.at(-1).copyIndex, 0);
 });
 
 test("opening-hand analysis rewards balanced mana, early action, and card flow", () => {

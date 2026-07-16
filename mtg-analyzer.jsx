@@ -6,7 +6,7 @@ import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, 
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
-import { analyzeOpeningHand, drawOpeningHand } from "./lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TABS = [
@@ -2217,16 +2217,36 @@ function HandCard({ item }) {
 function MulliganTab({ analysis, deck, cardMap, coreCards }) {
   const [attempts, setAttempts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [manualHand, setManualHand] = useState([]);
+  const [cardSearch, setCardSearch] = useState("");
   const attemptNumber = useRef(0);
 
-  const drawHand = () => {
-    const hand = drawOpeningHand(deck);
+  const recordHand = (hand, source) => {
     const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
     attemptNumber.current += 1;
-    const attempt = { id: attemptNumber.current, hand, result };
+    const attempt = { id: attemptNumber.current, hand, result, source };
     setAttempts((current) => [attempt, ...current].slice(0, 8));
     setSelectedId(attempt.id);
   };
+
+  const drawHand = () => recordHand(drawOpeningHand(deck), "Random draw");
+  const analyzeManualHand = () => {
+    if (manualHand.length !== 7) return;
+    recordHand(manualHand, "Selected hand");
+  };
+
+  const selectedCounts = useMemo(() => manualHand.reduce((counts, entry) => {
+    const key = normalizeName(entry.name);
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {}), [manualHand]);
+  const cardChoices = useMemo(() => {
+    const query = normalizeName(cardSearch);
+    return [...(deck.main || [])]
+      .filter((entry) => !query || normalizeName(entry.name).includes(query))
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .slice(0, 12);
+  }, [cardSearch, deck.main]);
 
   const selected = attempts.find((attempt) => attempt.id === selectedId) || attempts[0];
   const result = selected?.result;
@@ -2246,17 +2266,78 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
         </div>
       </section>
 
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Use the cards you actually drew</div>
+            <h3 className="mt-1 text-xl font-bold text-neutral-50">Select your opening hand</h3>
+            <p className="mt-2 text-sm text-neutral-400">Choose exactly seven cards from this deck. Available copies follow the quantities in the imported decklist.</p>
+          </div>
+          <span aria-live="polite" className={`shrink-0 rounded-lg border px-3 py-2 font-mono text-sm ${manualHand.length === 7 ? statusClasses("good") : "border-neutral-700 bg-neutral-950 text-neutral-300"}`}>{manualHand.length}/7 selected</span>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div>
+            <label htmlFor="opening-hand-search" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Find a card in your deck</label>
+            <input
+              id="opening-hand-search"
+              type="search"
+              value={cardSearch}
+              onChange={(event) => setCardSearch(event.target.value)}
+              placeholder="Search by card name"
+              className="mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
+            />
+            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {cardChoices.map((entry) => {
+                const selectedCount = selectedCounts[normalizeName(entry.name)] || 0;
+                const quantity = Math.max(0, Number(entry.qty) || 0);
+                const unavailable = manualHand.length >= 7 || selectedCount >= quantity;
+                return (
+                  <div key={entry.name} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+                    <div className="min-w-0">
+                      <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
+                      <div className="mt-1 font-mono text-[11px] text-neutral-500">{selectedCount}/{quantity} selected</div>
+                    </div>
+                    <button type="button" disabled={unavailable} onClick={() => setManualHand((current) => addCardToOpeningHand(deck, current, entry.name))} className="min-h-9 shrink-0 rounded-lg border border-amber-700 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600">
+                      Add
+                    </button>
+                  </div>
+                );
+              })}
+              {cardChoices.length === 0 && <div className="rounded-lg border border-dashed border-neutral-800 p-5 text-center text-sm text-neutral-500">No cards in this deck match that search.</div>}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Your seven</div>
+            <div className="mt-3 space-y-2">
+              {manualHand.map((entry, index) => (
+                <div key={`${entry.name}-${entry.copyIndex}`} className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2">
+                  <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
+                  <button type="button" onClick={() => setManualHand((current) => removeCardFromOpeningHand(current, index))} className="rounded px-2 py-1 text-xs font-semibold text-neutral-400 hover:bg-neutral-800 hover:text-red-300" aria-label={`Remove ${entry.name} from opening hand`}>Remove</button>
+                </div>
+              ))}
+              {Array.from({ length: Math.max(0, 7 - manualHand.length) }, (_, index) => <div key={`empty-${index}`} className="flex min-h-10 items-center rounded-lg border border-dashed border-neutral-800 px-3 text-xs text-neutral-600">Empty card slot</div>)}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" disabled={manualHand.length === 0} onClick={() => setManualHand([])} className="min-h-11 rounded-lg border border-neutral-700 px-3 text-sm font-semibold text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-700">Clear</button>
+              <button type="button" disabled={manualHand.length !== 7} onClick={analyzeManualHand} className="min-h-11 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze selected hand</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {!result ? (
         <section className={panelClass("p-8 text-center")}>
           <div className="text-lg font-semibold text-neutral-200">Ready for a first hand</div>
-          <div className="mt-2 text-sm text-neutral-500">Draw seven to grade the hand and find the cards that would best hold it together.</div>
+          <div className="mt-2 text-sm text-neutral-500">Draw a random seven or select the cards you actually drew to grade the hand and find what would best hold it together.</div>
         </section>
       ) : (
         <>
           <section className={panelClass("p-4 sm:p-5")}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Attempt {selected.id}</div>
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">{selected.source} · Attempt {selected.id}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-3">
                   <h3 className="text-3xl font-bold text-neutral-50">{result.verdict.label}</h3>
                   <span className={`rounded-lg border px-3 py-1 font-mono text-lg font-bold ${statusClasses(result.verdict.status)}`}>{result.score}/100</span>
@@ -2328,7 +2409,7 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
           <div className="mt-3 flex flex-wrap gap-2">
             {attempts.map((attempt) => (
               <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`rounded-lg border px-3 py-2 text-left text-sm ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}>
-                <span className="font-semibold">#{attempt.id} {attempt.result.verdict.label}</span>
+                <span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span>
                 <span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span>
               </button>
             ))}

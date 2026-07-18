@@ -63,6 +63,15 @@ test("analysis tabs are organized by user job", () => {
   assert.match(source, /function ManaTab/);
 });
 
+test("mobile tab bar centers the active tab whenever selection changes", () => {
+  assert.match(source, /function MobileTabBar/);
+  assert.match(source, /const navRef = useRef\(null\)/);
+  assert.match(source, /data-mobile-tab=\{mobile \? tab\.id : undefined\}/);
+  assert.match(source, /querySelector\(`\[data-mobile-tab="\$\{activeTab\}"\]`\)/);
+  assert.match(source, /scrollIntoView\(\{ behavior: "smooth", block: "nearest", inline: "center" \}\)/);
+  assert.match(source, /\}, \[activeTab\]\)/);
+});
+
 test("mulligan lab draws independent hands and renders strength and glue analysis", () => {
   assert.match(source, /\{ id: "mulligan", label: "Mulligan" \}/);
   assert.match(source, /function MulliganTab/);

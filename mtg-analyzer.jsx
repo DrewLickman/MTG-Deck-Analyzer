@@ -2422,6 +2422,7 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false }) {
     <button
       key={tab.id}
       type="button"
+      data-mobile-tab={mobile ? tab.id : undefined}
       onClick={() => setActiveTab(tab.id)}
       className={`${mobile ? "min-h-12 min-w-[96px] px-3 py-2 text-xs" : "min-h-10 px-3 py-2 text-sm"} shrink-0 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
     >
@@ -2431,8 +2432,15 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false }) {
 }
 
 function MobileTabBar({ activeTab, setActiveTab }) {
+  const navRef = useRef(null);
+
+  useEffect(() => {
+    const activeButton = navRef.current?.querySelector(`[data-mobile-tab="${activeTab}"]`);
+    activeButton?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [activeTab]);
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
+    <nav ref={navRef} className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
       {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} mobile />)}
     </nav>
   );

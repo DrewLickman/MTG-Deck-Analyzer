@@ -72,7 +72,7 @@ test("mobile tab bar centers the active tab whenever selection changes", () => {
   assert.match(source, /\}, \[activeTab\]\)/);
 });
 
-test("deck identity and snapshot render only on Home below the desktop tabs", () => {
+test("deck identity and snapshot render only on Home below the tablet tabs", () => {
   assert.match(source, /function HomeDeckHeader/);
   assert.match(source, /activeTab === "scorecard" && \(\s*<header className="space-y-4">/);
   assert.match(source, /<HomeDeckHeader deck=\{deck\} coreCards=\{coreCards\} toggleCoreCard=\{toggleCoreCard\} \/>/);
@@ -82,6 +82,27 @@ test("deck identity and snapshot render only on Home below the desktop tabs", ()
   const homeHeaderIndex = source.indexOf('{activeTab === "scorecard" && (', desktopTabsIndex);
   assert.ok(desktopTabsIndex >= 0);
   assert.ok(homeHeaderIndex > desktopTabsIndex);
+});
+
+test("desktop navigation uses a divided left sidebar with settings above vertical tabs", () => {
+  assert.match(source, /function DesktopSidebar/);
+  assert.match(source, /lg:grid-cols-\[208px_minmax\(0,1fr\)\]/);
+  assert.match(source, /h-screen flex-col border-r border-neutral-800/);
+  assert.match(source, /aria-label="Analysis sections"/);
+  assert.match(source, /Deck settings/);
+  assert.match(source, /Import & review/);
+  assert.match(source, /data-desktop-tab=\{vertical \? tab\.id : undefined\}/);
+  assert.match(source, /setActiveTab=\{setActiveTab\} vertical/);
+  assert.match(source, /md:flex lg:hidden/);
+});
+
+test("analysis tabs render simple icons on desktop and mobile", () => {
+  assert.match(source, /const TAB_ICON_PATHS =/);
+  assert.match(source, /function TabIcon/);
+  assert.match(source, /<TabIcon tabId=\{tab\.id\} \/>/);
+  for (const tabId of ["scorecard", "overview", "structure", "power", "mana", "cards", "mulligan", "cuts", "upgrades", "debug"]) {
+    assert.match(source, new RegExp(`\\b${tabId}: \\[`));
+  }
 });
 
 test("mobile deck snapshot uses a contained horizontal snap row", () => {

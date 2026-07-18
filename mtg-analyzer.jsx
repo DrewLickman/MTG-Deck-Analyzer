@@ -22,6 +22,19 @@ const TABS = [
   { id: "debug", label: "Debug" },
 ];
 
+const TAB_ICON_PATHS = {
+  scorecard: ["M3 11.5 12 4l9 7.5", "M5 10v10h14V10", "M9 20v-6h6v6"],
+  overview: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z"],
+  structure: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "m9 12 2 2 4-4"],
+  power: ["m13 2-9 12h7l-1 8 9-12h-7l1-8Z"],
+  mana: ["M12 2s7 8 7 13a7 7 0 0 1-14 0c0-5 7-13 7-13Z"],
+  cards: ["M5 4h13a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4Z", "M5 7H3v13a2 2 0 0 0 2 2h12v-2"],
+  mulligan: ["M20 7v5h-5", "M4 17v-5h5", "M6.1 9a7 7 0 0 1 11.5-2L20 12", "M17.9 15A7 7 0 0 1 6.4 17L4 12"],
+  cuts: ["m3 3 18 18", "m3 21 7.5-7.5", "M7 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z", "M7 17a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"],
+  upgrades: ["M4 17 10 11l4 4 6-8", "M15 7h5v5"],
+  debug: ["M8 9h8v9a4 4 0 0 1-8 0V9Z", "M9 9V6a3 3 0 0 1 6 0v3", "M4 13h4", "M16 13h4", "M4 17h4", "M16 17h4"],
+};
+
 const ROLE_FILTERS = [
   { id: "all", label: "All" },
   { id: "ramp", label: "Ramp" },
@@ -351,7 +364,7 @@ function InputPanel(props) {
   if (!sidePanelOpen) return null;
 
   return (
-    <aside className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-4">
+    <aside aria-label="Deck settings" className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:fixed lg:bottom-0 lg:left-[208px] lg:top-0 lg:z-30 lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-4 lg:shadow-2xl lg:shadow-black/50">
       <div className="lg:hidden">
         {hasAnalysis ? (
           <details className="rounded-lg border border-neutral-800 bg-neutral-900/80">
@@ -2441,17 +2454,61 @@ function DebugTab({ analysis, deck, cardMap, notFound }) {
   );
 }
 
-function TabButton({ tab, activeTab, setActiveTab, mobile = false }) {
+function TabIcon({ tabId }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">
+      {(TAB_ICON_PATHS[tabId] || []).map((path) => <path key={path} d={path} />)}
+    </svg>
+  );
+}
+
+function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = false }) {
   return (
     <button
       key={tab.id}
       type="button"
       data-mobile-tab={mobile ? tab.id : undefined}
+      data-desktop-tab={vertical ? tab.id : undefined}
+      aria-current={activeTab === tab.id ? "page" : undefined}
       onClick={() => setActiveTab(tab.id)}
-      className={`${mobile ? "min-h-12 min-w-[96px] px-3 py-2 text-xs" : "min-h-10 px-3 py-2 text-sm"} shrink-0 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+      className={`${mobile ? "min-h-12 min-w-[104px] px-3 py-2 text-xs" : vertical ? "min-h-11 w-full justify-start px-3 py-2 text-left text-sm" : "min-h-10 px-3 py-2 text-sm"} inline-flex shrink-0 items-center gap-2 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
     >
-      {tab.label}
+      <TabIcon tabId={tab.id} />
+      <span>{tab.label}</span>
     </button>
+  );
+}
+
+function DesktopSidebar({ activeTab, setActiveTab, sidePanelOpen, setSidePanelOpen }) {
+  return (
+    <aside className="sticky top-0 z-40 hidden h-screen flex-col border-r border-neutral-800 bg-neutral-950/95 lg:flex">
+      <div className="border-b border-neutral-800 p-3">
+        <button
+          type="button"
+          onClick={() => setSidePanelOpen((open) => !open)}
+          aria-label={sidePanelOpen ? "Close deck settings" : "Open deck settings"}
+          aria-expanded={sidePanelOpen}
+          className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${sidePanelOpen ? "border-amber-500 bg-amber-500/10 text-amber-100" : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-amber-500"}`}
+        >
+          <span aria-hidden="true" className="inline-flex h-8 w-8 shrink-0 flex-col items-center justify-center gap-1 rounded-md bg-neutral-950">
+            <span className="h-0.5 w-4 rounded bg-current" />
+            <span className="h-0.5 w-4 rounded bg-current" />
+            <span className="h-0.5 w-4 rounded bg-current" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold">Deck settings</span>
+            <span className="block text-[11px] text-neutral-500">Import & review</span>
+          </span>
+        </button>
+      </div>
+
+      <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">Analysis</div>
+        <div className="space-y-1">
+          {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} vertical />)}
+        </div>
+      </nav>
+    </aside>
   );
 }
 
@@ -2542,7 +2599,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
           </div>
         )}
 
-        <nav className="sticky top-0 z-20 -mx-3 hidden gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:flex lg:-mx-8 lg:px-8">
+        <nav className="sticky top-0 z-20 -mx-3 hidden gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:flex lg:hidden">
           {TABS.map((tab) => (
             <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />
           ))}
@@ -2792,13 +2849,14 @@ export default function App() {
   }
 
   return (
-    <div className={`relative min-h-screen bg-neutral-950 text-neutral-100 ${sidePanelOpen ? "lg:grid lg:grid-cols-[320px_minmax(0,1fr)]" : ""}`}>
+    <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[208px_minmax(0,1fr)]">
+      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} sidePanelOpen={sidePanelOpen} setSidePanelOpen={setSidePanelOpen} />
       <button
         type="button"
         onClick={() => setSidePanelOpen((open) => !open)}
-        aria-label={sidePanelOpen ? "Close import and review" : "Open import and review"}
-        title={sidePanelOpen ? "Close import and review" : "Open import and review"}
-        className="absolute left-2 top-2 z-40 inline-flex h-10 w-10 flex-col items-center justify-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-lg hover:border-amber-500"
+        aria-label={sidePanelOpen ? "Close deck settings" : "Open deck settings"}
+        title={sidePanelOpen ? "Close deck settings" : "Open deck settings"}
+        className="absolute left-2 top-2 z-40 inline-flex h-10 w-10 flex-col items-center justify-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-100 shadow-lg hover:border-amber-500 lg:hidden"
       >
         <span className="h-0.5 w-5 rounded bg-current" />
         <span className="h-0.5 w-5 rounded bg-current" />

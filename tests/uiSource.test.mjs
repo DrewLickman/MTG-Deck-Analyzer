@@ -72,6 +72,27 @@ test("mobile tab bar centers the active tab whenever selection changes", () => {
   assert.match(source, /\}, \[activeTab\]\)/);
 });
 
+test("deck identity and snapshot render only on Home below the desktop tabs", () => {
+  assert.match(source, /function HomeDeckHeader/);
+  assert.match(source, /activeTab === "scorecard" && \(\s*<header className="space-y-4">/);
+  assert.match(source, /<HomeDeckHeader deck=\{deck\} coreCards=\{coreCards\} toggleCoreCard=\{toggleCoreCard\} \/>/);
+  assert.match(source, /<SummaryStrip analysis=\{analysis\} deck=\{deck\} analysisReady=\{analysisReady\} \/>/);
+
+  const desktopTabsIndex = source.indexOf('<nav className="sticky top-0');
+  const homeHeaderIndex = source.indexOf('{activeTab === "scorecard" && (', desktopTabsIndex);
+  assert.ok(desktopTabsIndex >= 0);
+  assert.ok(homeHeaderIndex > desktopTabsIndex);
+});
+
+test("mobile deck snapshot uses a contained horizontal snap row", () => {
+  assert.match(source, /aria-label="Deck snapshot metrics"/);
+  assert.match(source, /snap-x snap-mandatory/);
+  assert.match(source, /overflow-x-auto overscroll-x-contain/);
+  assert.match(source, /w-\[82vw\] max-w-\[82vw\].*snap-start/);
+  assert.match(source, /md:grid md:grid-cols-2/);
+  assert.match(source, /xl:grid-cols-4/);
+});
+
 test("mulligan lab draws independent hands and renders strength and glue analysis", () => {
   assert.match(source, /\{ id: "mulligan", label: "Mulligan" \}/);
   assert.match(source, /function MulliganTab/);

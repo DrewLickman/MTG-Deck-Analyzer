@@ -378,41 +378,65 @@ function InputPanel(props) {
   );
 }
 
+function HomeDeckHeader({ deck, coreCards, toggleCoreCard }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">Commander Analysis</div>
+      <h2 className="mt-1 text-xl font-bold leading-tight text-neutral-50 sm:text-2xl">{names(deck.commanders)}</h2>
+      {deck.hasValidPartner && deck.commanders[1] && <div className="mt-1 text-sm text-neutral-400">Partner: {deck.commanders[1].name}</div>}
+      {deck.hasValidCompanion && deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
+      {coreCards.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {coreCards.map((card) => (
+            <button
+              key={card}
+              type="button"
+              onClick={() => toggleCoreCard(card)}
+              className="rounded border border-amber-700 bg-amber-950/40 px-2 py-1 text-xs text-amber-200 hover:border-amber-400"
+            >
+              Core: {card}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SummaryStrip({ analysis, deck, analysisReady }) {
   const bracket = analysis.bracket;
   const manaFit = analysis.manaFit || analysis.structure?.manaFit;
   const winPlan = analysis.structure?.winPlan;
   const topFinding = (analysis.priorityFindings || []).find((finding) => finding.severity !== "notice") || analysis.priorityFindings?.[0];
   return (
-    <section className={panelClass("p-4")}>
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Snapshot</div>
-          <div className="mt-1 text-lg font-semibold text-neutral-50">{names(deck.commanders)}</div>
-          <div className="mt-1 text-xs text-neutral-500">{deck.cardCount}/{deck.expectedMainCount} main-deck cards</div>
-        </div>
-        <div className="grid flex-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-lg border p-3 ${statusClasses(topFinding?.severity || "notice")}`}>
+    <section className={panelClass("min-w-0 p-4")}>
+      <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Snapshot</div>
+      <div className="mt-1 text-xs text-neutral-500">{deck.cardCount}/{deck.expectedMainCount} main-deck cards</div>
+      <div
+        aria-label="Deck snapshot metrics"
+        tabIndex={0}
+        className="mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-2 md:grid md:grid-cols-2 md:overflow-visible md:overscroll-auto md:pb-0 xl:grid-cols-4"
+      >
+          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(topFinding?.severity || "notice")}`}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
             <div className="mt-1 text-sm font-semibold">{topFinding?.label || "No active issue"}</div>
             <div className="mt-1 text-xs text-neutral-300">{topFinding?.action || "Tune from actual games and matchup needs."}</div>
           </div>
-          <div className={`rounded-lg border p-3 ${statusClasses(manaFit?.status)}`}>
+          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(manaFit?.status)}`}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Mana Fit</div>
             <div className="mt-1 text-sm font-semibold capitalize">{calculationValue(analysisReady, manaFit?.status)}</div>
             <div className="mt-1 text-xs text-neutral-300">{manaFit ? `${manaFit.currentLands} lands, ${manaFit.currentRamp} ramp` : "Loading"}</div>
           </div>
-          <div className={`rounded-lg border p-3 ${statusClasses(winPlan?.status)}`}>
+          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(winPlan?.status)}`}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Game Plan</div>
             <div className="mt-1 text-sm font-semibold capitalize">{calculationValue(analysisReady, winPlan?.status)}</div>
             <div className="mt-1 text-xs text-neutral-300">{winPlan?.primary || "Unknown"}</div>
           </div>
-          <div className={`rounded-lg border p-3 ${analysisReady ? (bracket?.bracket >= 4 ? statusClasses("bad") : bracket?.bracket === 3 ? statusClasses("warn") : statusClasses("good")) : statusClasses()}`}>
+          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${analysisReady ? (bracket?.bracket >= 4 ? statusClasses("bad") : bracket?.bracket === 3 ? statusClasses("warn") : statusClasses("good")) : statusClasses()}`}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Power</div>
             <div className="mt-1 text-sm font-semibold">{calculationValue(analysisReady, bracket?.rangeLabel)}</div>
             <div className="mt-1 text-xs text-neutral-300">{analysisReady ? bracket?.label : "Loading"}</div>
           </div>
-        </div>
       </div>
     </section>
   );
@@ -2496,30 +2520,8 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
   return (
     <main className="min-w-0 p-3 pb-32 sm:p-5 sm:pb-32 md:pb-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
-        <header className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">Commander Analysis</div>
-              <h2 className="mt-1 text-xl font-bold leading-tight text-neutral-50 sm:text-2xl">{names(deck.commanders)}</h2>
-              {deck.hasValidPartner && deck.commanders[1] && <div className="mt-1 text-sm text-neutral-400">Partner: {deck.commanders[1].name}</div>}
-              {deck.hasValidCompanion && deck.companions.length > 0 && <div className="mt-1 text-sm text-neutral-400">Companion: {names(deck.companions)}</div>}
-              {coreCards.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {coreCards.map((card) => (
-                    <button
-                      key={card}
-                      type="button"
-                      onClick={() => toggleCoreCard(card)}
-                      className="rounded border border-amber-700 bg-amber-950/40 px-2 py-1 text-xs text-amber-200 hover:border-amber-400"
-                    >
-                      Core: {card}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <SummaryStrip analysis={analysis} deck={deck} analysisReady={analysisReady} />
+        {(cardDataLoading || notFound.length > 0) && (
+          <div className="space-y-4">
           {cardDataLoading && (
             <div className="rounded-lg border border-sky-900 bg-sky-950/30 p-3 text-sm text-sky-100">
               <div className="font-semibold">Scryfall data loading</div>
@@ -2537,13 +2539,21 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
               </div>
             </div>
           )}
-        </header>
+          </div>
+        )}
 
         <nav className="sticky top-0 z-20 -mx-3 hidden gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:flex lg:-mx-8 lg:px-8">
           {TABS.map((tab) => (
             <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />
           ))}
         </nav>
+
+        {activeTab === "scorecard" && (
+          <header className="space-y-4">
+            <HomeDeckHeader deck={deck} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
+            <SummaryStrip analysis={analysis} deck={deck} analysisReady={analysisReady} />
+          </header>
+        )}
 
         {!analysisReady ? (
           <CalculatingAnalysisPanel />

@@ -119,8 +119,16 @@ test("local analysis builds roadmap data", () => {
 test("import UI exposes only the Moxfield URL flow", () => {
   assert.match(source, /Moxfield Import/);
   assert.match(source, /Import & Analyze/);
+  assert.match(source, /Paste clipboard/);
+  assert.match(source, /navigator\.clipboard\?\.readText/);
+  assert.match(source, /await navigator\.clipboard\.readText\(\)/);
   assert.match(source, /https:\/\/moxfield\.com\/decks\/\.\.\./);
-  assert.match(source, /onImport=\{handleMoxfieldImport\}/);
+  assert.match(source, /onImport: handleMoxfieldImport/);
+  assert.match(source, /flex min-h-screen items-center justify-center/);
+  assert.match(source, /<InputControls \{\.\.\.inputProps\} fullPage \/>/);
+  assert.doesNotMatch(source, /function EmptyWorkspace/);
+  assert.doesNotMatch(source, /Paste a Moxfield link to start\./);
+  assert.doesNotMatch(source, /The app imports the deck, detects command-zone cards/);
   assert.doesNotMatch(source, /Commander Override/);
   assert.doesNotMatch(source, /Companion Override/);
   assert.doesNotMatch(source, /Analyze Deck/);

@@ -79,6 +79,33 @@ test("opening-hand analysis rewards balanced mana, early action, and card flow",
   assert.ok(analysis.strengths.some((item) => item.includes("functional mana base")));
 });
 
+test("analyzed hands place lands first and sort nonlands by ascending mana value", () => {
+  const cards = [
+    card("Five Drop", { type_line: "Creature", cmc: 5 }),
+    card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    card("Two Drop", { type_line: "Creature", cmc: 2 }),
+    card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("One Drop", { type_line: "Creature", cmc: 1 }),
+    card("Four Drop", { type_line: "Creature", cmc: 4 }),
+    card("Three Drop", { type_line: "Creature", cmc: 3 }),
+  ];
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand: cards.map((item) => ({ name: item.name })),
+    cardMap: mapOf(cards),
+  });
+
+  assert.deepEqual(result.cards.map((item) => item.name), [
+    "Forest",
+    "Island",
+    "One Drop",
+    "Two Drop",
+    "Three Drop",
+    "Four Drop",
+    "Five Drop",
+  ]);
+});
+
 test("colorless-only and non-mana lands do not support a strong keep", () => {
   const wastes = card("Wastes", { type_line: "Basic Land — Wastes", cmc: 0, mana_cost: "", produced_mana: ["C"] });
   const ancientTomb = card("Ancient Tomb", { type_line: "Land", oracle_text: "{T}: Add {C}{C}.", cmc: 0, mana_cost: "", produced_mana: ["C"] });

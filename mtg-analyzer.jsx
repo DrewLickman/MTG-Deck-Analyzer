@@ -288,33 +288,40 @@ function InputControls({
   draftDeck,
   loading,
   progress,
+  onClipboardPaste,
   onImport,
   onMoxfieldPaste,
   setMoxfieldUrl,
+  fullPage = false,
   showTitle = true,
 }) {
   return (
-    <div>
+    <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : ""}>
       {showTitle && (
-        <div>
+        <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
-          <h1 className="mt-1 text-2xl font-bold text-neutral-50">Deck Analyzer</h1>
+          <h1 className={`${fullPage ? "mt-2 text-4xl sm:text-5xl" : "mt-1 text-2xl"} font-bold text-neutral-50`}>Deck Analyzer</h1>
+          {fullPage && <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-neutral-400">Import a public Moxfield deck to load its cards and begin the full Commander analysis.</p>}
         </div>
       )}
 
-      <div className={`${showTitle ? "mt-5" : "mt-3"} space-y-3`}>
-        <div>
+      <div className={`${showTitle ? (fullPage ? "mt-8" : "mt-5") : "mt-3"} space-y-3`}>
+        <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Moxfield Import</div>
           <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>
         </div>
-        <div className="grid gap-2">
+        <div className={`grid gap-2 ${fullPage ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
           <input
+            aria-label="Moxfield deck URL"
             value={moxfieldUrl}
             onChange={(event) => setMoxfieldUrl(event.target.value)}
             onPaste={onMoxfieldPaste}
             placeholder="https://moxfield.com/decks/..."
             className="min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
           />
+          <button type="button" onClick={onClipboardPaste} disabled={loading} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600">
+            Paste clipboard
+          </button>
           <button type="button" onClick={onImport} disabled={loading || !moxfieldUrl.trim()} className="min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">
             Import & Analyze
           </button>
@@ -368,27 +375,6 @@ function InputPanel(props) {
         <InputControls {...props} />
       </div>
     </aside>
-  );
-}
-
-function EmptyWorkspace({ draftDeck, sidePanelOpen }) {
-  if (!sidePanelOpen) return null;
-
-  return (
-    <main className="p-3 sm:p-5 lg:p-8">
-      <div className="mx-auto max-w-6xl">
-        <div className={panelClass("p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Ready</div>
-          <h2 className="mt-2 text-2xl font-semibold text-neutral-50">Paste a Moxfield link to start.</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">The app imports the deck, detects command-zone cards, loads Scryfall data, and runs the analysis from that single source of truth.</p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <Metric label="Commanders" value={draftDeck ? draftDeck.commanders.length : 0} />
-            <Metric label="Companions" value={draftDeck ? draftDeck.companions.length : 0} />
-            <Metric label="Main Count" value={draftDeck ? `${draftDeck.cardCount}/${draftDeck.expectedMainCount}` : "-"} />
-          </div>
-        </div>
-      </div>
-    </main>
   );
 }
 
@@ -2740,6 +2726,21 @@ export default function App() {
     importMoxfieldUrl(url, { auto: true });
   }, [importMoxfieldUrl]);
 
+  const handleClipboardPaste = useCallback(async () => {
+    setError(null);
+    try {
+      if (!navigator.clipboard?.readText) throw new Error("Clipboard access is not available in this browser.");
+      const clipboardText = await navigator.clipboard.readText();
+      const url = extractMoxfieldDeckUrl(clipboardText);
+      if (!url) throw new Error("The clipboard does not contain a valid Moxfield deck link.");
+      setMoxfieldUrl(url);
+      lastAutoImportRef.current = url;
+      await importMoxfieldUrl(url, { auto: true });
+    } catch (clipboardError) {
+      setError(clipboardError.message || "Clipboard access was blocked. Paste the Moxfield link into the field instead.");
+    }
+  }, [importMoxfieldUrl]);
+
   useEffect(() => {
     const url = extractMoxfieldDeckUrl(moxfieldUrl);
     if (!url || url !== moxfieldUrl.trim() || loading || lastAutoImportRef.current === url) return undefined;
@@ -2749,6 +2750,28 @@ export default function App() {
     }, 250);
     return () => window.clearTimeout(timer);
   }, [importMoxfieldUrl, loading, moxfieldUrl]);
+
+  const inputProps = {
+    error,
+    moxfieldUrl,
+    draftDeck,
+    loading,
+    progress,
+    onClipboardPaste: handleClipboardPaste,
+    onImport: handleMoxfieldImport,
+    onMoxfieldPaste: handleMoxfieldPaste,
+    setMoxfieldUrl,
+  };
+
+  if (!analysis || !deckModel) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-10 text-neutral-100 sm:px-6">
+        <main className="w-full max-w-4xl">
+          <InputControls {...inputProps} fullPage />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative min-h-screen bg-neutral-950 text-neutral-100 ${sidePanelOpen ? "lg:grid lg:grid-cols-[320px_minmax(0,1fr)]" : ""}`}>
@@ -2764,20 +2787,11 @@ export default function App() {
         <span className="h-0.5 w-5 rounded bg-current" />
       </button>
       <InputPanel
-        error={error}
         hasAnalysis={Boolean(analysis)}
-        moxfieldUrl={moxfieldUrl}
-        draftDeck={draftDeck}
-        loading={loading}
-        progress={progress}
         sidePanelOpen={sidePanelOpen}
-        onImport={handleMoxfieldImport}
-        onMoxfieldPaste={handleMoxfieldPaste}
-        setMoxfieldUrl={setMoxfieldUrl}
+        {...inputProps}
       />
-      {analysis && deckModel
-        ? <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
-        : <EmptyWorkspace draftDeck={draftDeck} sidePanelOpen={sidePanelOpen} />}
+      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
     </div>
   );
 }

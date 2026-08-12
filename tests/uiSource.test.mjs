@@ -84,16 +84,27 @@ test("deck identity and snapshot render only on Home below the tablet tabs", () 
   assert.ok(homeHeaderIndex > desktopTabsIndex);
 });
 
-test("desktop navigation uses a divided left sidebar with settings above vertical tabs", () => {
+test("desktop navigation uses a divided left sidebar without a redundant import pop-out", () => {
   assert.match(source, /function DesktopSidebar/);
   assert.match(source, /lg:grid-cols-\[208px_minmax\(0,1fr\)\]/);
   assert.match(source, /h-screen flex-col border-r border-neutral-800/);
   assert.match(source, /aria-label="Analysis sections"/);
-  assert.match(source, /Deck settings/);
-  assert.match(source, /Import & review/);
+  assert.match(source, /function DesktopSidebar\(\{ activeTab, setActiveTab \}\)/);
   assert.match(source, /data-desktop-tab=\{vertical \? tab\.id : undefined\}/);
   assert.match(source, /setActiveTab=\{setActiveTab\} vertical/);
   assert.match(source, /md:flex lg:hidden/);
+  const sidebar = source.slice(source.indexOf("function DesktopSidebar"), source.indexOf("function MobileTabBar"));
+  assert.doesNotMatch(sidebar, /Deck settings|Import & review|InputControls/);
+});
+
+test("desktop keeps a sticky shared Moxfield importer while narrow layouts retain the panel", () => {
+  assert.match(source, /function DesktopImportBar/);
+  assert.match(source, /aria-label="Desktop Moxfield import"/);
+  assert.match(source, /className="sticky top-0 z-30 hidden lg:block"/);
+  assert.match(source, /<InputControls \{\.\.\.inputProps\} compact showTitle=\{false\} \/>/);
+  assert.match(source, /inputProps=\{inputProps\}/);
+  assert.match(source, /<aside aria-label="Deck settings" className="border-b border-neutral-800 bg-neutral-950\/95 p-3 lg:hidden">/);
+  assert.match(source, /className="absolute left-2 top-2 z-40 .* lg:hidden"/);
 });
 
 test("analysis tabs render simple icons on desktop and mobile", () => {
@@ -189,6 +200,8 @@ test("local analysis builds roadmap data", () => {
 test("import UI exposes only the Moxfield URL flow", () => {
   assert.match(source, /Moxfield Import/);
   assert.match(source, /Import & Analyze/);
+  assert.match(source, /<form\s+onSubmit=\{\(event\) => \{\s*event\.preventDefault\(\);\s*onImport\(\);\s*\}\}/);
+  assert.match(source, /<button type="submit" disabled=\{loading \|\| !moxfieldUrl\.trim\(\)\}/);
   assert.match(source, /Paste clipboard/);
   assert.match(source, /navigator\.clipboard\?\.readText/);
   assert.match(source, /await navigator\.clipboard\.readText\(\)/);
@@ -203,6 +216,25 @@ test("import UI exposes only the Moxfield URL flow", () => {
   assert.doesNotMatch(source, /Companion Override/);
   assert.doesNotMatch(source, /Analyze Deck/);
   assert.doesNotMatch(source, /placeholder=\{"1 Sol Ring/);
+});
+
+test("import preflights parsed and seeded decks before committing new analysis state", () => {
+  const analyzeStart = source.indexOf("const analyzeDeckValues = useCallback");
+  const parseIndex = source.indexOf("const parsedDeck = parseDecklist", analyzeStart);
+  const seedIndex = source.indexOf("const seededDeck = validateCommandZone", analyzeStart);
+  const remoteResetIndex = source.indexOf("setRemoteAnalysis(null)", analyzeStart);
+  const deckCommitIndex = source.indexOf("setDeckModel(seededDeck)", analyzeStart);
+  assert.ok(analyzeStart >= 0);
+  assert.ok(parseIndex > analyzeStart);
+  assert.ok(seedIndex > parseIndex);
+  assert.ok(remoteResetIndex > seedIndex);
+  assert.ok(deckCommitIndex > remoteResetIndex);
+
+  const importStart = source.indexOf("const importMoxfieldUrl = useCallback");
+  const analyzeCallIndex = source.indexOf("await analyzeDeckValues({", importStart);
+  const deckInputCommitIndex = source.indexOf("setDeckInput(importedDeckText)", importStart);
+  assert.ok(analyzeCallIndex > importStart);
+  assert.ok(deckInputCommitIndex > analyzeCallIndex);
 });
 
 test("home and snapshot render explicit action-oriented findings", () => {

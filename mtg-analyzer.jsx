@@ -310,9 +310,10 @@ function InputControls({
   setMoxfieldUrl,
   fullPage = false,
   showTitle = true,
+  compact = false,
 }) {
   return (
-    <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : ""}>
+    <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : compact ? "rounded-lg border border-neutral-800 bg-neutral-950/95 p-3 shadow-2xl shadow-black/20 sm:p-4" : ""}>
       {showTitle && (
         <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
@@ -321,12 +322,18 @@ function InputControls({
         </div>
       )}
 
-      <div className={`${showTitle ? (fullPage ? "mt-8" : "mt-5") : "mt-3"} space-y-3`}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onImport();
+        }}
+        className={`${showTitle ? (fullPage ? "mt-8" : compact ? "mt-0" : "mt-5") : compact ? "mt-0" : "mt-3"} space-y-3`}
+      >
         <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Moxfield Import</div>
           <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>
         </div>
-        <div className={`grid gap-2 ${fullPage ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
+        <div className={`grid gap-2 ${fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
           <input
             aria-label="Moxfield deck URL"
             value={moxfieldUrl}
@@ -338,12 +345,12 @@ function InputControls({
           <button type="button" onClick={onClipboardPaste} disabled={loading} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600">
             Paste clipboard
           </button>
-          <button type="button" onClick={onImport} disabled={loading || !moxfieldUrl.trim()} className="min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">
+          <button type="submit" disabled={loading || !moxfieldUrl.trim()} className="min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">
             Import & Analyze
           </button>
         </div>
 
-        {draftDeck && (
+        {!compact && draftDeck && (
           <div className={panelClass("p-3")}>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Imported Deck</div>
             <div className="mt-1 text-sm font-semibold text-neutral-100">{names(draftDeck.commanders)}</div>
@@ -356,7 +363,7 @@ function InputControls({
 
         {error && <div className="rounded-lg border border-rose-900 bg-rose-950/40 p-3 text-sm text-rose-200">{error}</div>}
         {loading && <div className="rounded-lg border border-amber-900 bg-amber-950/30 p-3 text-sm text-amber-200">{progress || "Analyzing..."}</div>}
-      </div>
+      </form>
     </div>
   );
 }
@@ -367,29 +374,23 @@ function InputPanel(props) {
   if (!sidePanelOpen) return null;
 
   return (
-    <aside aria-label="Deck settings" className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:fixed lg:bottom-0 lg:left-[208px] lg:top-0 lg:z-30 lg:w-80 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-4 lg:shadow-2xl lg:shadow-black/50">
-      <div className="lg:hidden">
-        {hasAnalysis ? (
-          <details className="rounded-lg border border-neutral-800 bg-neutral-900/80">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">Import</div>
-                <div className="text-sm font-semibold text-neutral-100">{names(draftDeck?.commanders || [])}</div>
-              </div>
-              <span className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-400">Edit</span>
-            </summary>
-            <div className="border-t border-neutral-800 p-3">
-              <InputControls {...props} showTitle={false} />
+    <aside aria-label="Deck settings" className="border-b border-neutral-800 bg-neutral-950/95 p-3 lg:hidden">
+      {hasAnalysis ? (
+        <details className="rounded-lg border border-neutral-800 bg-neutral-900/80">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">Import</div>
+              <div className="text-sm font-semibold text-neutral-100">{names(draftDeck?.commanders || [])}</div>
             </div>
-          </details>
-        ) : (
-          <InputControls {...props} />
-        )}
-      </div>
-
-      <div className="hidden lg:block">
+            <span className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-400">Edit</span>
+          </summary>
+          <div className="border-t border-neutral-800 p-3">
+            <InputControls {...props} showTitle={false} />
+          </div>
+        </details>
+      ) : (
         <InputControls {...props} />
-      </div>
+      )}
     </aside>
   );
 }
@@ -2659,29 +2660,9 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
   );
 }
 
-function DesktopSidebar({ activeTab, setActiveTab, sidePanelOpen, setSidePanelOpen }) {
+function DesktopSidebar({ activeTab, setActiveTab }) {
   return (
     <aside className="sticky top-0 z-40 hidden h-screen flex-col border-r border-neutral-800 bg-neutral-950/95 lg:flex">
-      <div className="border-b border-neutral-800 p-3">
-        <button
-          type="button"
-          onClick={() => setSidePanelOpen((open) => !open)}
-          aria-label={sidePanelOpen ? "Close deck settings" : "Open deck settings"}
-          aria-expanded={sidePanelOpen}
-          className={`flex min-h-12 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${sidePanelOpen ? "border-amber-500 bg-amber-500/10 text-amber-100" : "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-amber-500"}`}
-        >
-          <span aria-hidden="true" className="inline-flex h-8 w-8 shrink-0 flex-col items-center justify-center gap-1 rounded-md bg-neutral-950">
-            <span className="h-0.5 w-4 rounded bg-current" />
-            <span className="h-0.5 w-4 rounded bg-current" />
-            <span className="h-0.5 w-4 rounded bg-current" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold">Deck settings</span>
-            <span className="block text-[11px] text-neutral-500">Import & review</span>
-          </span>
-        </button>
-      </div>
-
       <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">Analysis</div>
         <div className="space-y-1">
@@ -2716,7 +2697,15 @@ function CalculatingAnalysisPanel() {
   );
 }
 
-function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction }) {
+function DesktopImportBar({ inputProps }) {
+  return (
+    <section aria-label="Desktop Moxfield import" className="sticky top-0 z-30 hidden lg:block">
+      <InputControls {...inputProps} compact showTitle={false} />
+    </section>
+  );
+}
+
+function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction, inputProps }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -2757,6 +2746,8 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
   return (
     <main className="min-w-0 p-3 pb-32 sm:p-5 sm:pb-32 md:pb-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
+        <DesktopImportBar inputProps={inputProps} />
+
         {(cardDataLoading || notFound.length > 0) && (
           <div className="space-y-4">
           {cardDataLoading && (
@@ -2879,26 +2870,24 @@ export default function App() {
   const analyzeDeckValues = useCallback(async ({ deckText = deckInput, commanderText = cmdInput, companionText = companionInput } = {}) => {
     if (!deckText.trim()) throw new Error("Please paste a decklist.");
 
-    const runId = analysisRunIdRef.current + 1;
-    analysisRunIdRef.current = runId;
-    setRemoteAnalysis(null);
-    setDeckModel(null);
-    setNotFound([]);
-    setCardDataLoading(false);
-    setCardDataProgress("");
-
     const parsedDeck = parseDecklist(deckText, { commanderInput: commanderText, companionInput: companionText });
     if (!parsedDeck.commanders.length) throw new Error("Could not identify a commander.");
     if (!parsedDeck.main.length) throw new Error("No main-deck cards parsed.");
 
     const nextConstructionSession = createConstructionSession(parsedDeck);
-    constructionSessionRef.current = nextConstructionSession;
-    constructionRevisionRef.current += 1;
-    setConstructionSession(nextConstructionSession);
-
     const allNames = deckLookupNames(parsedDeck);
     const seedResults = seedScryfallResults(allNames);
     const seededDeck = validateCommandZone(parsedDeck, seedResults, findCard, getCardText);
+
+    const runId = analysisRunIdRef.current + 1;
+    analysisRunIdRef.current = runId;
+    setRemoteAnalysis(null);
+    setNotFound([]);
+    setCardDataLoading(false);
+    setCardDataProgress("");
+    constructionSessionRef.current = nextConstructionSession;
+    constructionRevisionRef.current += 1;
+    setConstructionSession(nextConstructionSession);
 
     setCardMap(seedResults);
     setDeckModel(seededDeck);
@@ -2961,16 +2950,15 @@ export default function App() {
       const importedCompanionInput = data.companions?.length ? data.companions[0] : companionInput;
       const importedDeckText = data.deckText || "";
 
-      if (data.commanders?.length) setCmdInput(importedCommanderInput);
-      if (data.companions?.length) setCompanionInput(importedCompanionInput);
-
-      setDeckInput(importedDeckText);
       setProgress("Analyzing imported deck...");
       await analyzeDeckValues({
         deckText: importedDeckText,
         commanderText: importedCommanderInput,
         companionText: importedCompanionInput,
       });
+      if (data.commanders?.length) setCmdInput(importedCommanderInput);
+      if (data.companions?.length) setCompanionInput(importedCompanionInput);
+      setDeckInput(importedDeckText);
       setSidePanelOpen(false);
     } catch (importError) {
       setError(importError.message);
@@ -3066,7 +3054,7 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[208px_minmax(0,1fr)]">
-      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} sidePanelOpen={sidePanelOpen} setSidePanelOpen={setSidePanelOpen} />
+      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       <button
         type="button"
         onClick={() => setSidePanelOpen((open) => !open)}
@@ -3083,7 +3071,7 @@ export default function App() {
         sidePanelOpen={sidePanelOpen}
         {...inputProps}
       />
-      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} />
+      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} inputProps={inputProps} />
     </div>
   );
 }

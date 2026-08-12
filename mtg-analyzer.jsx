@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
-import { addCandidateToMain, applyConstructionSession, chooseVersusCandidate, constructionCounts, createConstructionSession, drawConstructionCandidates, restartConstructionSession, returnVersusCandidates, setAsideCandidates, undoConstructionAction } from "./lib/deckConstruction.mjs";
+import { addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveMainToCandidatePool, restartConstructionSession, returnVersusCandidates, returnVersusComparison, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, undoConstructionAction } from "./lib/deckConstruction.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
@@ -147,16 +147,62 @@ function cardPreviewUrl(card) {
 function CardPreview({ card, name }) {
   const imageUrl = cardPreviewUrl(card);
   const [open, setOpen] = useState(false);
+  const [previewPosition, setPreviewPosition] = useState(null);
+  const anchorRef = useRef(null);
+  const previewRef = useRef(null);
+
+  const updatePreviewPosition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const anchor = anchorRef.current?.getBoundingClientRect();
+    const preview = previewRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+
+    const viewportPadding = 8;
+    const width = Math.min(224, Math.max(0, window.innerWidth - viewportPadding * 2));
+    const measuredHeight = preview?.height || Math.min(320, window.innerHeight - viewportPadding * 2);
+    const height = Math.min(measuredHeight, Math.max(160, window.innerHeight - viewportPadding * 2));
+    const spaceBelow = window.innerHeight - anchor.bottom - viewportPadding;
+    const placeAbove = spaceBelow < height + 8 && anchor.top > height + viewportPadding;
+    const unclampedTop = placeAbove ? anchor.top - height - 8 : anchor.bottom + 8;
+    const top = Math.max(viewportPadding, Math.min(unclampedTop, window.innerHeight - height - viewportPadding));
+    const left = Math.max(viewportPadding, Math.min(anchor.left, window.innerWidth - width - viewportPadding));
+    setPreviewPosition({ top, left, width, maxHeight: window.innerHeight - viewportPadding * 2 });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(updatePreviewPosition);
+    window.addEventListener("resize", updatePreviewPosition);
+    window.addEventListener("scroll", updatePreviewPosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePreviewPosition);
+      window.removeEventListener("scroll", updatePreviewPosition, true);
+    };
+  }, [open, updatePreviewPosition]);
+
+  const showPreview = () => {
+    setOpen(true);
+    window.requestAnimationFrame(updatePreviewPosition);
+  };
+
   return (
-    <div className="group relative inline-flex" onMouseLeave={() => setOpen(false)}>
+    <div ref={anchorRef} className="group relative inline-flex" onMouseEnter={showPreview} onMouseLeave={() => setOpen(false)}>
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen((current) => !current);
+          if (!open) showPreview();
+        }}
         className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 group-hover:border-amber-500 group-hover:text-amber-200"
       >
         {name}
       </button>
-      <div className={`pointer-events-none absolute left-0 top-full z-30 mt-2 w-56 rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden group-hover:block"}`}>
+      <div
+        ref={previewRef}
+        className={`pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden group-hover:block"}`}
+        style={previewPosition ? { top: previewPosition.top, left: previewPosition.left, width: previewPosition.width, maxHeight: previewPosition.maxHeight } : undefined}
+      >
         {imageUrl ? (
           <img src={imageUrl} alt={name} className="w-full rounded-md" loading="lazy" />
         ) : (
@@ -2093,7 +2139,7 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
   );
 }
 
-function ConstructionCandidateCard({ name, analysis, cardMap, children }) {
+function ConstructionCandidateCard({ name, sourceLabel, analysis, cardMap, children }) {
   const card = findCard(cardMap, name);
   const imageUrl = cardPreviewUrl(card);
   const candidate = (analysis.sideboardAnalysis || []).find((item) => normalizeName(item.name) === normalizeName(name));
@@ -2101,15 +2147,18 @@ function ConstructionCandidateCard({ name, analysis, cardMap, children }) {
 
   return (
     <article className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-lg shadow-black/20">
-      <div className="grid gap-0 sm:grid-cols-[140px_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-0 sm:grid-cols-[minmax(160px,30%)_minmax(0,1fr)]">
         {imageUrl ? (
-          <img src={imageUrl} alt={name} className="aspect-[5/7] h-full w-full object-cover" loading="lazy" />
+          <div className="flex h-[min(46vh,26rem)] min-h-40 w-full items-center justify-center bg-neutral-900 p-2">
+            <img src={imageUrl} alt={name} className="h-full w-full object-contain" loading="lazy" />
+          </div>
         ) : (
-          <div className="flex min-h-48 items-center justify-center bg-neutral-900 p-4 text-center text-xs text-neutral-500">No image available</div>
+          <div className="flex h-[min(46vh,26rem)] min-h-40 items-center justify-center bg-neutral-900 p-4 text-center text-xs text-neutral-500">No image available</div>
         )}
         <div className="flex min-w-0 flex-col p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
+              <div className="text-[11px] uppercase tracking-wide text-amber-400">{sourceLabel || "Candidate pool card"}</div>
               <div className="text-lg font-bold text-neutral-50">{name}</div>
               <div className="mt-1"><ManaCostDisplay card={card} /></div>
             </div>
@@ -2154,24 +2203,50 @@ function ConstructionZone({ title, count, entries, cardMap, emptyText, tone = "n
 
 function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analysisReady }) {
   const [mode, setMode] = useState("pick");
-  const [drawnNames, setDrawnNames] = useState([]);
+  const [drawnCards, setDrawnCards] = useState([]);
+  const [moveMainConfirmOpen, setMoveMainConfirmOpen] = useState(false);
   const counts = constructionCounts(session);
   const drawCount = mode === "versus" ? 2 : 1;
+  const mainSignature = session.main.map((entry) => `${normalizeName(entry.name)}:${entry.qty}`).join("|");
   const poolSignature = session.pool.map((entry) => `${normalizeName(entry.name)}:${entry.qty}`).join("|");
+  const draftSignature = `${mode}|${mainSignature}|${poolSignature}`;
   const cardsNeeded = Math.max(0, deck.expectedMainCount - counts.main);
   const excessCards = Math.max(0, counts.main - deck.expectedMainCount);
+  const canMoveMain = counts.main > 0;
 
-  const drawCards = useCallback(() => {
-    setDrawnNames(drawConstructionCandidates(session.pool, drawCount));
-  }, [drawCount, session.pool]);
+  const drawCards = useCallback((sourceSession = session) => {
+    const sourceCounts = constructionCounts(sourceSession);
+    if (mode === "versus" && sourceCounts.main >= 100) {
+      const mainName = drawConstructionCandidates(sourceSession.main, 1)[0];
+      const poolName = drawConstructionCandidates(sourceSession.pool, 1)[0];
+      setDrawnCards(mainName && poolName
+        ? [{ name: mainName, source: "main" }, { name: poolName, source: "pool" }]
+        : []);
+      return;
+    }
+    setDrawnCards(drawConstructionCandidates(sourceSession.pool, drawCount).map((name) => ({ name, source: "pool" })));
+  }, [drawCount, mode, session.main, session.pool]);
 
   useEffect(() => {
     drawCards();
-  }, [drawCards, poolSignature]);
+  }, [drawCards, draftSignature]);
+
+  const drawnNames = drawnCards.map((card) => card.name);
+  const versusNeedsSwap = mode === "versus" && counts.main >= 100;
+  const canDraw = mode === "versus" && versusNeedsSwap
+    ? counts.main > 0 && counts.pool >= 1
+    : counts.pool >= drawCount;
+
+  const refreshAfterDecision = (next) => {
+    const nextSession = next || session;
+    const zonesUnchanged = nextSession.main === session.main && nextSession.pool === session.pool && nextSession.setAside === session.setAside;
+    if (zonesUnchanged) drawCards(nextSession);
+    else setDrawnCards([]);
+  };
 
   const handleNeither = () => {
-    onAction({ type: "neither", names: drawnNames });
-    setDrawnNames(drawConstructionCandidates(session.pool, 2));
+    const next = onAction({ type: "neither", names: drawnNames, cards: drawnCards });
+    refreshAfterDecision(next);
   };
 
   const roleSignals = (analysis.structure?.roleBalance || []).slice(0, 5);
@@ -2189,6 +2264,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => onAction({ type: "undo" })} disabled={!session.history.length} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Undo</button>
             <button type="button" onClick={() => onAction({ type: "restart" })} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-rose-700 hover:text-rose-200">Restart draft</button>
+            <button type="button" onClick={() => canMoveMain && setMoveMainConfirmOpen(true)} disabled={!canMoveMain} className="min-h-10 rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm font-semibold text-amber-100 hover:border-amber-500 hover:text-amber-50 disabled:cursor-not-allowed disabled:opacity-40">Move Main Deck to Sideboard</button>
           </div>
         </div>
 
@@ -2199,13 +2275,24 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
           <Metric label="Set Aside" value={counts.setAside} tone={counts.setAside ? "bad" : "neutral"} sub="Excluded this session" />
         </div>
         <div className="mt-3 rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-300">{session.notice}</div>
+        {!canMoveMain && <div className="mt-2 text-xs text-neutral-500">The main deck is empty. There are no main-deck cards to move; command-zone cards remain separate.</div>}
+        {moveMainConfirmOpen && (
+          <div role="alertdialog" aria-label="Confirm moving main deck to sideboard" className="mt-3 rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-50">
+            <div className="font-semibold">Move the entire current main deck?</div>
+            <p className="mt-1 leading-6 text-amber-100/80">This will move all {counts.main} current main-deck cards into the Moxfield sideboard/candidate pool, combine them with the cards already there, and empty the main deck for drafting. Command-zone cards stay separate and are not moved.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => { onAction({ type: "moveMainToPool" }); setMoveMainConfirmOpen(false); }} className="min-h-10 rounded bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-amber-400">Confirm move</button>
+              <button type="button" onClick={() => setMoveMainConfirmOpen(false)} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-200 hover:border-neutral-500">Cancel</button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Draft Mode</div>
-            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus keeps the winner and returns the other card to the pool.</div>
+            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus lets you choose either card for the main deck or set either card aside while the other returns to the pool.</div>
           </div>
           <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
             {[{ id: "pick", label: "Pick One" }, { id: "versus", label: "Versus" }].map((option) => (
@@ -2215,35 +2302,41 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         </div>
 
         <div className="mt-4">
-          {drawnNames.length === drawCount ? (
+          {drawnCards.length === (mode === "pick" ? 1 : 2) ? (
             <div className={`grid gap-3 ${mode === "versus" ? "xl:grid-cols-2" : "mx-auto max-w-3xl"}`}>
-              {drawnNames.map((name, index) => (
-                <ConstructionCandidateCard key={`${mode}-${name}-${index}`} name={name} analysis={analysis} cardMap={cardMap}>
-                  {mode === "pick" ? (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <button type="button" onClick={() => onAction({ type: "add", name })} className="min-h-11 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Add to main deck</button>
-                      <button type="button" onClick={() => onAction({ type: "setAside", names: [name] })} className="min-h-11 rounded-lg border border-rose-800 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-100 hover:bg-rose-900/50">Set aside</button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => onAction({ type: "versus", winnerName: name, loserName: drawnNames[index === 0 ? 1 : 0] })} className="min-h-11 w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Choose this card</button>
-                  )}
-                </ConstructionCandidateCard>
-              ))}
+              {drawnCards.map((card, index) => {
+                const other = drawnCards[index === 0 ? 1 : 0];
+                return (
+                  <ConstructionCandidateCard key={`${mode}-${card.source}-${card.name}-${index}`} name={card.name} sourceLabel={card.source === "main" ? "Main deck card" : "Candidate pool card"} analysis={analysis} cardMap={cardMap}>
+                    {mode === "pick" ? (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button type="button" onClick={() => onAction({ type: "add", name: card.name })} className="min-h-11 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Add to main deck</button>
+                        <button type="button" onClick={() => onAction({ type: "setAside", names: [card.name] })} className="min-h-11 rounded-lg border border-rose-800 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-100 hover:bg-rose-900/50">Set aside</button>
+                      </div>
+                    ) : (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button type="button" onClick={() => refreshAfterDecision(onAction({ type: "versusComparison", chosen: card, other }))} className="min-h-11 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Choose this card</button>
+                        <button type="button" onClick={() => refreshAfterDecision(onAction({ type: "versusComparisonSetAside", chosen: card, other }))} className="min-h-11 rounded-lg border border-rose-800 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-100 hover:bg-rose-900/50">Set aside</button>
+                      </div>
+                    )}
+                  </ConstructionCandidateCard>
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-neutral-700 bg-neutral-950 p-8 text-center">
-              <div className="text-sm font-semibold text-neutral-200">{counts.pool ? (mode === "versus" ? "Versus needs at least two distinct candidates." : "No card drawn yet.") : "Candidate pool complete."}</div>
-              <div className="mt-1 text-xs text-neutral-500">{counts.pool ? "Use Pick One when only one candidate remains." : "Undo or restart if you want to revisit a decision."}</div>
+              <div className="text-sm font-semibold text-neutral-200">{counts.pool ? (mode === "versus" ? (versusNeedsSwap ? "Versus needs one main-deck card and one candidate-pool card." : "Versus needs at least two distinct candidate-pool cards.") : "No card drawn yet.") : "Candidate pool complete."}</div>
+              <div className="mt-1 text-xs text-neutral-500">{counts.pool ? (versusNeedsSwap ? "Choose or set aside either card; the other returns to its original zone." : "Use Pick One when only one candidate remains.") : "Undo or restart if you want to revisit a decision."}</div>
             </div>
           )}
         </div>
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" onClick={drawCards} disabled={counts.pool < drawCount} className="min-h-10 w-fit rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Draw another {mode === "versus" ? "pair" : "card"}</button>
+          <button type="button" onClick={() => drawCards()} disabled={!canDraw} className="min-h-10 w-fit rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Draw another {mode === "versus" ? (versusNeedsSwap ? "replacement" : "pair") : "card"}</button>
           {mode === "versus" && drawnNames.length === 2 && (
             <div className="flex flex-col items-start gap-1 sm:items-end">
               <button type="button" onClick={handleNeither} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Neither — return both</button>
-              <div className="text-xs text-neutral-500">Both cards stay in the candidate pool; Set Aside is unchanged.</div>
+              <div className="text-xs text-neutral-500">{versusNeedsSwap ? "Both cards return to their original zones; Set Aside is unchanged." : "Both cards stay in the candidate pool; Set Aside is unchanged."}</div>
             </div>
           )}
         </div>
@@ -2983,26 +3076,33 @@ export default function App() {
 
   const handleConstructionAction = useCallback((action) => {
     const current = constructionSessionRef.current;
-    if (!current) return;
+    if (!current) return current;
 
     let next = current;
     if (action.type === "add") next = addCandidateToMain(current, action.name);
+    else if (action.type === "moveMainToPool") next = moveMainToCandidatePool(current);
     else if (action.type === "setAside") next = setAsideCandidates(current, action.names);
     else if (action.type === "versus") next = chooseVersusCandidate(current, action.winnerName, action.loserName);
-    else if (action.type === "neither") next = returnVersusCandidates(current, action.names);
+    else if (action.type === "versusSetAside") next = setAsideVersusCandidate(current, action.chosenName, action.otherName);
+    else if (action.type === "versusComparison") next = chooseVersusComparison(current, action.chosen, action.other);
+    else if (action.type === "versusComparisonSetAside") next = setAsideVersusComparison(current, action.chosen, action.other);
+    else if (action.type === "neither") next = action.cards?.length === 2
+      ? returnVersusComparison(current, action.cards)
+      : returnVersusCandidates(current, action.names);
     else if (action.type === "undo") next = undoConstructionAction(current);
     else if (action.type === "restart") next = restartConstructionSession(current);
-    if (next === current) return;
+    if (next === current) return next;
 
     const zonesChanged = next.main !== current.main || next.pool !== current.pool || next.setAside !== current.setAside;
     constructionSessionRef.current = next;
     setConstructionSession(next);
-    if (!zonesChanged) return;
+    if (!zonesChanged) return next;
 
     constructionRevisionRef.current += 1;
     setRemoteAnalysis(null);
     setDeckModel((currentDeck) => applyConstructionSession(currentDeck, next));
     setCoreCards((currentCards) => currentCards.filter((name) => next.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
+    return next;
   }, []);
 
   const handleClipboardPaste = useCallback(async () => {

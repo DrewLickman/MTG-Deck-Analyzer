@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
+import { addCandidateToMain, applyConstructionSession, chooseVersusCandidate, constructionCounts, createConstructionSession, drawConstructionCandidates, restartConstructionSession, returnVersusCandidates, setAsideCandidates, undoConstructionAction } from "./lib/deckConstruction.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
@@ -16,6 +17,7 @@ const TABS = [
   { id: "power", label: "Power" },
   { id: "mana", label: "Mana" },
   { id: "cards", label: "Cards" },
+  { id: "construct", label: "Build" },
   { id: "mulligan", label: "Mulligan" },
   { id: "cuts", label: "Cuts" },
   { id: "upgrades", label: "Upgrades" },
@@ -29,6 +31,7 @@ const TAB_ICON_PATHS = {
   power: ["m13 2-9 12h7l-1 8 9-12h-7l1-8Z"],
   mana: ["M12 2s7 8 7 13a7 7 0 0 1-14 0c0-5 7-13 7-13Z"],
   cards: ["M5 4h13a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4Z", "M5 7H3v13a2 2 0 0 0 2 2h12v-2"],
+  construct: ["M4 4h6v6H4V4Z", "M14 4h6v6h-6V4Z", "M4 14h6v6H4v-6Z", "M17 14v6", "M14 17h6"],
   mulligan: ["M20 7v5h-5", "M4 17v-5h5", "M6.1 9a7 7 0 0 1 11.5-2L20 12", "M17.9 15A7 7 0 0 1 6.4 17L4 12"],
   cuts: ["m3 3 18 18", "m3 21 7.5-7.5", "M7 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z", "M7 17a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"],
   upgrades: ["M4 17 10 11l4 4 6-8", "M15 7h5v5"],
@@ -2089,6 +2092,183 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
   );
 }
 
+function ConstructionCandidateCard({ name, analysis, cardMap, children }) {
+  const card = findCard(cardMap, name);
+  const imageUrl = cardPreviewUrl(card);
+  const candidate = (analysis.sideboardAnalysis || []).find((item) => normalizeName(item.name) === normalizeName(name));
+  const roles = getRoleKeys(card).slice(0, 4);
+
+  return (
+    <article className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-lg shadow-black/20">
+      <div className="grid gap-0 sm:grid-cols-[140px_minmax(0,1fr)]">
+        {imageUrl ? (
+          <img src={imageUrl} alt={name} className="aspect-[5/7] h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <div className="flex min-h-48 items-center justify-center bg-neutral-900 p-4 text-center text-xs text-neutral-500">No image available</div>
+        )}
+        <div className="flex min-w-0 flex-col p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="text-lg font-bold text-neutral-50">{name}</div>
+              <div className="mt-1"><ManaCostDisplay card={card} /></div>
+            </div>
+            {candidate?.recommendation && (
+              <span className={`rounded border px-2 py-0.5 text-xs uppercase ${candidate.recommendation === "add" ? "border-emerald-800 bg-emerald-950/40 text-emerald-200" : "border-amber-800 bg-amber-950/40 text-amber-200"}`}>
+                {candidate.recommendation}
+              </span>
+            )}
+          </div>
+          {roles.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{roles.map((role) => <RoleChip key={role} role={role} />)}</div>}
+          <p className="mt-3 text-sm leading-6 text-neutral-400">{candidate?.reason || "Use the live deck metrics below to judge this card's fit."}</p>
+          <div className="mt-auto pt-4">{children}</div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ConstructionZone({ title, count, entries, cardMap, emptyText, tone = "neutral" }) {
+  const toneClass = tone === "main"
+    ? "border-emerald-900/80"
+    : tone === "aside"
+      ? "border-rose-900/80"
+      : "border-amber-900/80";
+  return (
+    <section className={`rounded-lg border bg-neutral-900/80 ${toneClass}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2.5">
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">{title}</div>
+        <span className="rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 font-mono text-xs text-neutral-300">{count}</span>
+      </div>
+      <div className="max-h-60 space-y-1 overflow-y-auto p-2">
+        {entries.length ? entries.map((entry) => (
+          <div key={normalizeName(entry.name)} className="flex items-center justify-between gap-2 rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1.5">
+            <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
+            {entry.qty > 1 && <span className="font-mono text-xs text-neutral-500">x{entry.qty}</span>}
+          </div>
+        )) : <div className="p-3 text-sm text-neutral-500">{emptyText}</div>}
+      </div>
+    </section>
+  );
+}
+
+function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analysisReady }) {
+  const [mode, setMode] = useState("pick");
+  const [drawnNames, setDrawnNames] = useState([]);
+  const counts = constructionCounts(session);
+  const drawCount = mode === "versus" ? 2 : 1;
+  const poolSignature = session.pool.map((entry) => `${normalizeName(entry.name)}:${entry.qty}`).join("|");
+  const cardsNeeded = Math.max(0, deck.expectedMainCount - counts.main);
+  const excessCards = Math.max(0, counts.main - deck.expectedMainCount);
+
+  const drawCards = useCallback(() => {
+    setDrawnNames(drawConstructionCandidates(session.pool, drawCount));
+  }, [drawCount, session.pool]);
+
+  useEffect(() => {
+    drawCards();
+  }, [drawCards, poolSignature]);
+
+  const handleNeither = () => {
+    onAction({ type: "neither", names: drawnNames });
+    setDrawnNames(drawConstructionCandidates(session.pool, 2));
+  };
+
+  const roleSignals = (analysis.structure?.roleBalance || []).slice(0, 5);
+  const totalDeckCount = counts.main + deck.commanders.reduce((sum, entry) => sum + entry.qty, 0);
+
+  return (
+    <div className="space-y-4">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">Deck Construction</div>
+            <h2 className="mt-1 text-2xl font-bold text-neutral-50">Build from the Moxfield sideboard</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">The main deck, candidate pool, and set-aside pile are independent. Set-aside cards stay excluded from future draws for this session; Undo or Restart are the recovery controls.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onAction({ type: "undo" })} disabled={!session.history.length} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Undo</button>
+            <button type="button" onClick={() => onAction({ type: "restart" })} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-rose-700 hover:text-rose-200">Restart draft</button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <Metric label="Main Deck" value={`${counts.main}/${deck.expectedMainCount}`} tone={counts.main === deck.expectedMainCount ? "good" : "warn"} sub={cardsNeeded ? `${cardsNeeded} still needed` : excessCards ? `${excessCards} over target` : "Target reached"} />
+          <Metric label="Total Deck" value={`${totalDeckCount}/100`} tone={totalDeckCount === 100 ? "good" : "warn"} sub={`${deck.commanders.length} command-zone card${deck.commanders.length === 1 ? "" : "s"}`} />
+          <Metric label="Candidate Pool" value={counts.pool} tone={counts.pool ? "neutral" : "warn"} sub="Moxfield sideboard" />
+          <Metric label="Set Aside" value={counts.setAside} tone={counts.setAside ? "bad" : "neutral"} sub="Excluded this session" />
+        </div>
+        <div className="mt-3 rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-300">{session.notice}</div>
+      </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Draft Mode</div>
+            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus keeps the winner and returns the other card to the pool.</div>
+          </div>
+          <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
+            {[{ id: "pick", label: "Pick One" }, { id: "versus", label: "Versus" }].map((option) => (
+              <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-9 rounded px-3 py-1.5 text-sm font-semibold ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {drawnNames.length === drawCount ? (
+            <div className={`grid gap-3 ${mode === "versus" ? "xl:grid-cols-2" : "mx-auto max-w-3xl"}`}>
+              {drawnNames.map((name, index) => (
+                <ConstructionCandidateCard key={`${mode}-${name}-${index}`} name={name} analysis={analysis} cardMap={cardMap}>
+                  {mode === "pick" ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button type="button" onClick={() => onAction({ type: "add", name })} className="min-h-11 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Add to main deck</button>
+                      <button type="button" onClick={() => onAction({ type: "setAside", names: [name] })} className="min-h-11 rounded-lg border border-rose-800 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-100 hover:bg-rose-900/50">Set aside</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => onAction({ type: "versus", winnerName: name, loserName: drawnNames[index === 0 ? 1 : 0] })} className="min-h-11 w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Choose this card</button>
+                  )}
+                </ConstructionCandidateCard>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-neutral-700 bg-neutral-950 p-8 text-center">
+              <div className="text-sm font-semibold text-neutral-200">{counts.pool ? (mode === "versus" ? "Versus needs at least two distinct candidates." : "No card drawn yet.") : "Candidate pool complete."}</div>
+              <div className="mt-1 text-xs text-neutral-500">{counts.pool ? "Use Pick One when only one candidate remains." : "Undo or restart if you want to revisit a decision."}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <button type="button" onClick={drawCards} disabled={counts.pool < drawCount} className="min-h-10 w-fit rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Draw another {mode === "versus" ? "pair" : "card"}</button>
+          {mode === "versus" && drawnNames.length === 2 && (
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <button type="button" onClick={handleNeither} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Neither — return both</button>
+              <div className="text-xs text-neutral-500">Both cards stay in the candidate pool; Set Aside is unchanged.</div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Live Deck Signals</div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {roleSignals.map((role) => (
+            <div key={role.key} className={`rounded border px-3 py-2 ${statusClasses(role.status)}`}>
+              <div className="text-xs text-neutral-400">{role.label}</div>
+              <div className="mt-1 font-mono text-lg font-bold">{analysisReady ? role.count : "..."} <span className="text-xs font-normal text-neutral-500">/ {role.target}</span></div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-3 xl:grid-cols-3">
+        <ConstructionZone title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" />
+        <ConstructionZone title="Candidate Pool" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No candidates remain in the Moxfield sideboard pool." />
+        <ConstructionZone title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" />
+      </div>
+    </div>
+  );
+}
+
 function UpgradesTab({ analysis, analysisReady }) {
   const roadmap = analysis.roadmap || {};
   const candidateAdds = [...analysis.sideboardAnalysis, ...analysis.consideringAnalysis];
@@ -2536,7 +2716,7 @@ function CalculatingAnalysisPanel() {
   );
 }
 
-function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard }) {
+function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -2612,7 +2792,9 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
           </header>
         )}
 
-        {!analysisReady ? (
+        {activeTab === "construct" ? (
+          <DeckConstructionTab analysis={analysis} deck={deck} cardMap={cardMap} session={constructionSession} onAction={onConstructionAction} analysisReady={analysisReady} />
+        ) : !analysisReady ? (
           <CalculatingAnalysisPanel />
         ) : (
           <>
@@ -2659,6 +2841,7 @@ export default function App() {
   const [notFound, setNotFound] = useState([]);
   const [analysisSettings, setAnalysisSettings] = useState(DEFAULT_ANALYSIS_SETTINGS);
   const [coreCards, setCoreCards] = useState([]);
+  const [constructionSession, setConstructionSession] = useState(null);
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
@@ -2669,6 +2852,8 @@ export default function App() {
   const lastAutoImportRef = useRef("");
   const importInFlightRef = useRef("");
   const analysisRunIdRef = useRef(0);
+  const constructionSessionRef = useRef(null);
+  const constructionRevisionRef = useRef(0);
 
   const draftDeck = useMemo(() => {
     if (!deckInput.trim()) return null;
@@ -2706,6 +2891,11 @@ export default function App() {
     if (!parsedDeck.commanders.length) throw new Error("Could not identify a commander.");
     if (!parsedDeck.main.length) throw new Error("No main-deck cards parsed.");
 
+    const nextConstructionSession = createConstructionSession(parsedDeck);
+    constructionSessionRef.current = nextConstructionSession;
+    constructionRevisionRef.current += 1;
+    setConstructionSession(nextConstructionSession);
+
     const allNames = deckLookupNames(parsedDeck);
     const seedResults = seedScryfallResults(allNames);
     const seededDeck = validateCommandZone(parsedDeck, seedResults, findCard, getCardText);
@@ -2726,16 +2916,18 @@ export default function App() {
         if (analysisRunIdRef.current !== runId) return;
 
         const validatedDeck = validateCommandZone(parsedDeck, scryfall.results, findCard, getCardText);
+        const constructedDeck = applyConstructionSession(validatedDeck, constructionSessionRef.current);
         setCardMap(scryfall.results);
         setNotFound(scryfall.notFound);
-        setDeckModel(validatedDeck);
-        setCoreCards((current) => current.filter((name) => validatedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
+        setDeckModel(constructedDeck);
+        setCoreCards((current) => current.filter((name) => constructedDeck.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
         setCardDataProgress(scryfall.notFound.length
           ? `Loaded card data with ${scryfall.notFound.length} unmatched card${scryfall.notFound.length === 1 ? "" : "s"}.`
           : `Loaded card data for ${allNames.length} unique cards.`);
 
-        const nextRemoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(validatedDeck, scryfall.results));
-        if (analysisRunIdRef.current === runId) setRemoteAnalysis(nextRemoteAnalysis);
+        const analysisRevision = constructionRevisionRef.current;
+        const nextRemoteAnalysis = await runRemoteAnalysis(buildAnalysisPrompt(constructedDeck, scryfall.results));
+        if (analysisRunIdRef.current === runId && constructionRevisionRef.current === analysisRevision) setRemoteAnalysis(nextRemoteAnalysis);
       } catch (fetchError) {
         console.warn("Scryfall enrichment failed:", fetchError);
         if (analysisRunIdRef.current === runId) {
@@ -2801,6 +2993,30 @@ export default function App() {
     importMoxfieldUrl(url, { auto: true });
   }, [importMoxfieldUrl]);
 
+  const handleConstructionAction = useCallback((action) => {
+    const current = constructionSessionRef.current;
+    if (!current) return;
+
+    let next = current;
+    if (action.type === "add") next = addCandidateToMain(current, action.name);
+    else if (action.type === "setAside") next = setAsideCandidates(current, action.names);
+    else if (action.type === "versus") next = chooseVersusCandidate(current, action.winnerName, action.loserName);
+    else if (action.type === "neither") next = returnVersusCandidates(current, action.names);
+    else if (action.type === "undo") next = undoConstructionAction(current);
+    else if (action.type === "restart") next = restartConstructionSession(current);
+    if (next === current) return;
+
+    const zonesChanged = next.main !== current.main || next.pool !== current.pool || next.setAside !== current.setAside;
+    constructionSessionRef.current = next;
+    setConstructionSession(next);
+    if (!zonesChanged) return;
+
+    constructionRevisionRef.current += 1;
+    setRemoteAnalysis(null);
+    setDeckModel((currentDeck) => applyConstructionSession(currentDeck, next));
+    setCoreCards((currentCards) => currentCards.filter((name) => next.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
+  }, []);
+
   const handleClipboardPaste = useCallback(async () => {
     setError(null);
     try {
@@ -2829,7 +3045,7 @@ export default function App() {
   const inputProps = {
     error,
     moxfieldUrl,
-    draftDeck,
+    draftDeck: deckModel || draftDeck,
     loading,
     progress,
     onClipboardPaste: handleClipboardPaste,
@@ -2867,7 +3083,7 @@ export default function App() {
         sidePanelOpen={sidePanelOpen}
         {...inputProps}
       />
-      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} />
+      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} />
     </div>
   );
 }

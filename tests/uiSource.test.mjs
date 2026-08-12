@@ -100,9 +100,28 @@ test("analysis tabs render simple icons on desktop and mobile", () => {
   assert.match(source, /const TAB_ICON_PATHS =/);
   assert.match(source, /function TabIcon/);
   assert.match(source, /<TabIcon tabId=\{tab\.id\} \/>/);
-  for (const tabId of ["scorecard", "overview", "structure", "power", "mana", "cards", "mulligan", "cuts", "upgrades", "debug"]) {
+  for (const tabId of ["scorecard", "overview", "structure", "power", "mana", "cards", "construct", "mulligan", "cuts", "upgrades", "debug"]) {
     assert.match(source, new RegExp(`\\b${tabId}: \\[`));
   }
+});
+
+test("build tab provides a three-zone Moxfield sideboard construction workflow", () => {
+  assert.match(source, /\{ id: "construct", label: "Build" \}/);
+  assert.match(source, /function DeckConstructionTab/);
+  assert.match(source, /Build from the Moxfield sideboard/);
+  assert.match(source, /Pick One/);
+  assert.match(source, /Versus/);
+  assert.match(source, /Add to main deck/);
+  assert.match(source, /Set aside/);
+  assert.match(source, /Neither — return both/);
+  assert.match(source, /Both cards stay in the candidate pool; Set Aside is unchanged/);
+  assert.match(source, /title="Main Deck"/);
+  assert.match(source, /title="Candidate Pool"/);
+  assert.match(source, /title="Set Aside"/);
+  assert.match(source, /type: "undo"/);
+  assert.match(source, /type: "restart"/);
+  assert.match(source, /applyConstructionSession\(currentDeck, next\)/);
+  assert.match(source, /activeTab === "construct"/);
 });
 
 test("mobile deck snapshot uses a contained horizontal snap row", () => {

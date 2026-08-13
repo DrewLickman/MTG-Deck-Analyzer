@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, isLand, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
-import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveMainToCandidatePool, restartConstructionSession, returnVersusCandidates, returnVersusComparison, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, undoConstructionAction } from "./lib/deckConstruction.mjs";
+import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveConstructionStack, moveMainToCandidatePool, restartConstructionSession, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, setAsideVersusPair, undoConstructionAction } from "./lib/deckConstruction.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
@@ -2185,23 +2185,77 @@ function ConstructionCandidateCard({ name, sourceLabel, analysis, cardMap, child
   );
 }
 
-function ConstructionZone({ title, count, entries, cardMap, emptyText, tone = "neutral" }) {
+const CONSTRUCTION_ZONE_OPTIONS = [
+  { id: "main", label: "Main Deck" },
+  { id: "pool", label: "Candidate Pool" },
+  { id: "setAside", label: "Set Aside" },
+];
+
+function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, tone = "neutral", onMoveStack, draggedStack, activeDropZone, onDragStart, onDragEnd, setActiveDropZone }) {
   const toneClass = tone === "main"
     ? "border-emerald-900/80"
     : tone === "aside"
       ? "border-rose-900/80"
       : "border-amber-900/80";
+  const isActiveDropTarget = activeDropZone === zone;
+  const dropClass = isActiveDropTarget
+    ? tone === "main"
+      ? "border-emerald-400 ring-2 ring-emerald-500/60"
+      : tone === "aside"
+        ? "border-rose-400 ring-2 ring-rose-500/60"
+        : "border-amber-400 ring-2 ring-amber-500/60"
+    : "";
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    if (draggedStack && draggedStack.from !== zone) onMoveStack({ ...draggedStack, to: zone });
+    onDragEnd();
+  };
+
   return (
-    <section className={`rounded-lg border bg-neutral-900/80 ${toneClass}`}>
+    <section
+      className={`rounded-lg border bg-neutral-900/80 transition ${toneClass} ${dropClass}`}
+      onDragOver={(event) => {
+        if (!draggedStack || draggedStack.from === zone) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setActiveDropZone(zone);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setActiveDropZone(null);
+      }}
+      onDrop={handleDrop}
+    >
       <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2.5">
         <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">{title}</div>
         <span className="rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 font-mono text-xs text-neutral-300">{count}</span>
       </div>
       <div className="max-h-60 space-y-1 overflow-y-auto p-2">
         {entries.length ? entries.map((entry) => (
-          <div key={normalizeName(entry.name)} className="flex items-center justify-between gap-2 rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1.5">
+          <div
+            key={normalizeName(entry.name)}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", `${zone}:${entry.name}`);
+              onDragStart({ name: entry.name, from: zone });
+            }}
+            onDragEnd={onDragEnd}
+            className="flex items-center justify-between gap-2 rounded border border-neutral-800 bg-neutral-950/70 px-2 py-1.5"
+          >
+            <span aria-hidden="true" className="hidden cursor-grab select-none text-neutral-500 active:cursor-grabbing md:inline">⠿</span>
             <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
-            {entry.qty > 1 && <span className="font-mono text-xs text-neutral-500">x{entry.qty}</span>}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {entry.qty > 1 && <span className="font-mono text-xs text-neutral-500">x{entry.qty}</span>}
+              <details className="relative">
+                <summary aria-label={`Move ${entry.name} to another zone`} className="cursor-pointer rounded border border-neutral-700 px-2 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Move to…</summary>
+                <div className="absolute right-0 z-20 mt-1 min-w-44 rounded border border-neutral-700 bg-neutral-950 p-1 shadow-xl">
+                  {CONSTRUCTION_ZONE_OPTIONS.filter((option) => option.id !== zone).map((option) => (
+                    <button key={option.id} type="button" onClick={() => onMoveStack({ name: entry.name, from: zone, to: option.id })} className="block w-full rounded px-2 py-1.5 text-left text-xs text-neutral-200 hover:bg-neutral-800 hover:text-amber-100">Move to {option.label}</button>
+                  ))}
+                </div>
+              </details>
+            </div>
           </div>
         )) : <div className="p-3 text-sm text-neutral-500">{emptyText}</div>}
       </div>
@@ -2212,6 +2266,8 @@ function ConstructionZone({ title, count, entries, cardMap, emptyText, tone = "n
 function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analysisReady }) {
   const [mode, setMode] = useState("versus");
   const [drawnCards, setDrawnCards] = useState([]);
+  const [draggedStack, setDraggedStack] = useState(null);
+  const [activeDropZone, setActiveDropZone] = useState(null);
   const [moveMainConfirmOpen, setMoveMainConfirmOpen] = useState(false);
   const initialSessionRef = useRef(session.initial);
   const counts = constructionCounts(session);
@@ -2275,8 +2331,20 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
   };
 
   const handleNeither = () => {
-    const next = onAction({ type: "neither", names: drawnNames, cards: drawnCards });
+    const next = onAction({ type: "neitherSetAside", cards: drawnCards });
     refreshAfterDecision(next);
+  };
+
+  const handleMoveStack = (move) => {
+    const next = onAction({ type: "moveStack", ...move });
+    if (next !== session) setDrawnCards([]);
+    setDraggedStack(null);
+    setActiveDropZone(null);
+  };
+
+  const endStackDrag = () => {
+    setDraggedStack(null);
+    setActiveDropZone(null);
   };
 
   const roleSignals = (analysis.structure?.roleBalance || []).slice(0, 5);
@@ -2323,7 +2391,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Draft Mode</div>
-            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus lets you choose either card for the main deck or set either card aside while the other returns to the pool.</div>
+            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus lets you choose either card for the main deck or set either card aside while the other returns to the pool. Neither sets both displayed cards aside.</div>
           </div>
           <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
             {[{ id: "pick", label: "Pick One" }, { id: "versus", label: "Versus" }].map((option) => (
@@ -2369,12 +2437,12 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
           )}
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" onClick={() => drawCards()} disabled={!canDraw} className="min-h-10 w-fit rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Draw another {mode === "versus" ? (versusNeedsSwap ? "replacement" : "pair") : "card"}</button>
+        <div className={`mt-4 flex flex-col gap-2 ${mode === "versus" ? "items-center text-center" : "items-start"}`}>
+          <button type="button" onClick={() => drawCards()} disabled={!canDraw} className="min-h-10 w-fit rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">{mode === "versus" ? "Skip, redraw draft" : "Draw another card"}</button>
           {mode === "versus" && drawnNames.length === 2 && (
-            <div className="flex flex-col items-start gap-1 sm:items-end">
-              <button type="button" onClick={handleNeither} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Neither — return both</button>
-              <div className="text-xs text-neutral-500">{versusNeedsSwap ? "Both cards return to their original zones; Set Aside is unchanged." : "Both cards stay in the candidate pool; Set Aside is unchanged."}</div>
+            <div className="flex flex-col items-center gap-1">
+              <button type="button" onClick={handleNeither} className="min-h-10 rounded border border-rose-800 bg-rose-950/30 px-3 py-2 text-sm font-semibold text-rose-100 hover:border-rose-400 hover:outline hover:outline-1 hover:outline-rose-500 hover:bg-rose-900/50">Neither — set both aside</button>
+              <div className="text-xs text-neutral-500">Both cards move to Set Aside. Undo restores their original zones.</div>
             </div>
           )}
         </div>
@@ -2393,9 +2461,9 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
       </section>
 
       <div className="grid gap-3 xl:grid-cols-3">
-        <ConstructionZone title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" />
-        <ConstructionZone title="Candidate Pool" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No candidates remain in the Moxfield sideboard pool." />
-        <ConstructionZone title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" />
+        <ConstructionZone zone="main" title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="pool" title="Candidate Pool" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No candidates remain in the Moxfield sideboard pool." onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="setAside" title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
       </div>
     </div>
   );
@@ -3112,15 +3180,14 @@ export default function App() {
     let next = current;
     if (action.type === "add") next = addCandidateToMain(current, action.name);
     else if (action.type === "addCandidateLands") next = addCandidateLandsToMain(current, action.names);
+    else if (action.type === "moveStack") next = moveConstructionStack(current, action);
     else if (action.type === "moveMainToPool") next = moveMainToCandidatePool(current);
     else if (action.type === "setAside") next = setAsideCandidates(current, action.names);
     else if (action.type === "versus") next = chooseVersusCandidate(current, action.winnerName, action.loserName);
     else if (action.type === "versusSetAside") next = setAsideVersusCandidate(current, action.chosenName, action.otherName);
     else if (action.type === "versusComparison") next = chooseVersusComparison(current, action.chosen, action.other);
     else if (action.type === "versusComparisonSetAside") next = setAsideVersusComparison(current, action.chosen, action.other);
-    else if (action.type === "neither") next = action.cards?.length === 2
-      ? returnVersusComparison(current, action.cards)
-      : returnVersusCandidates(current, action.names);
+    else if (action.type === "neitherSetAside") next = setAsideVersusPair(current, action.cards);
     else if (action.type === "undo") next = undoConstructionAction(current);
     else if (action.type === "restart") next = restartConstructionSession(current);
     if (next === current) return next;

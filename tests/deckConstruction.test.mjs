@@ -9,13 +9,13 @@ import {
   constructionCounts,
   createConstructionSession,
   drawConstructionCandidates,
+  moveConstructionStack,
   moveMainToCandidatePool,
   restartConstructionSession,
-  returnVersusCandidates,
-  returnVersusComparison,
   setAsideCandidates,
   setAsideVersusCandidate,
   setAsideVersusComparison,
+  setAsideVersusPair,
   undoConstructionAction,
 } from "../lib/deckConstruction.mjs";
 
@@ -76,6 +76,45 @@ test("moving an empty main deck is a no-op", () => {
   assert.equal(moveMainToCandidatePool(reset), reset);
 });
 
+test("zone stack movement covers every direction, transfers whole quantities, and supports undo", () => {
+  const quantities = { main: 2, pool: 3, setAside: 4 };
+  const names = { main: "Main Stack", pool: "Pool Stack", setAside: "Aside Stack" };
+  const directions = [
+    ["main", "pool"], ["main", "setAside"],
+    ["pool", "main"], ["pool", "setAside"],
+    ["setAside", "main"], ["setAside", "pool"],
+  ];
+
+  for (const [from, to] of directions) {
+    const started = {
+      ...createConstructionSession({ ...deckFixture(), main: [{ qty: quantities.main, name: names.main }], sideboard: [{ qty: quantities.pool, name: names.pool }] }),
+      setAside: [{ qty: quantities.setAside, name: names.setAside }],
+    };
+    const moved = moveConstructionStack(started, { name: names[from], from, to });
+    assert.equal(moved[from].some((entry) => entry.name === names[from]), false, `${from} stack removed`);
+    assert.equal(moved[to].find((entry) => entry.name === names[from]).qty, quantities[from], `${from} quantity preserved`);
+    assert.equal(moved.history.length, 1, `${from} to ${to} is one undo step`);
+    assert.deepEqual(constructionCounts(undoConstructionAction(moved)), constructionCounts(started));
+  }
+});
+
+test("zone stack movement merges quantities, applies to the analyzed deck, and rejects invalid moves", () => {
+  const deck = { ...deckFixture(), main: [{ qty: 2, name: "Shared Stack" }], sideboard: [{ qty: 3, name: "Shared Stack" }] };
+  const started = createConstructionSession(deck);
+  const moved = moveConstructionStack(started, { name: "Shared Stack", from: "pool", to: "main" });
+  assert.equal(moved.main.find((entry) => entry.name === "Shared Stack").qty, 5);
+  assert.equal(moved.pool.length, 0);
+
+  const applied = applyConstructionSession(deck, moved);
+  assert.equal(applied.main.find((entry) => entry.name === "Shared Stack").qty, 5);
+  assert.equal(applied.sideboard.length, 0);
+  assert.deepEqual(applied.commanders, deck.commanders);
+
+  assert.equal(moveConstructionStack(started, { name: "Shared Stack", from: "main", to: "main" }), started);
+  assert.equal(moveConstructionStack(started, { name: "Missing", from: "main", to: "pool" }), started);
+  assert.equal(moveConstructionStack(started, { name: "Shared Stack", from: "unknown", to: "pool" }), started);
+});
+
 test("bulk land add moves every selected pool quantity, preserves nonlands, and supports undo", () => {
   const deck = {
     ...deckFixture(),
@@ -133,14 +172,18 @@ test("versus set aside moves only the clicked card and leaves the other in the p
   assert.deepEqual(constructionCounts(undone), { main: 97, pool: 4, setAside: 0 });
 });
 
-test("versus neither returns both cards to the pool without changing set aside", () => {
+test("pool-versus-pool neither sets both cards aside as one undoable action", () => {
   const started = createConstructionSession(deckFixture());
-  const rejected = returnVersusCandidates(started, ["Candidate A", "Candidate C"]);
-  assert.deepEqual(constructionCounts(rejected), { main: 97, pool: 4, setAside: 0 });
-  assert.equal(rejected.pool.some((entry) => entry.name === "Candidate A"), true);
-  assert.equal(rejected.pool.some((entry) => entry.name === "Candidate C"), true);
-  assert.equal(rejected.history.length, 0);
-  assert.match(rejected.notice, /returned to the candidate pool/);
+  const rejected = setAsideVersusPair(started, [
+    { name: "Candidate A", source: "pool" },
+    { name: "Candidate C", source: "pool" },
+  ]);
+  assert.deepEqual(constructionCounts(rejected), { main: 97, pool: 2, setAside: 2 });
+  assert.equal(rejected.setAside.find((entry) => entry.name === "Candidate A").qty, 1);
+  assert.equal(rejected.setAside.find((entry) => entry.name === "Candidate C").qty, 1);
+  assert.equal(rejected.history.length, 1);
+  assert.match(rejected.notice, /Set both draft cards aside/);
+  assert.deepEqual(constructionCounts(undoConstructionAction(rejected)), { main: 97, pool: 4, setAside: 0 });
 });
 
 test("oversized versus replaces a main-deck card with the candidate card", () => {
@@ -190,16 +233,18 @@ test("oversized versus keeps or sets aside either source without moving the othe
   assert.equal(setAsidePool.main.find((entry) => entry.name === "Main Card").qty, 100);
 });
 
-test("oversized versus neither preserves both original zones", () => {
+test("main-versus-pool neither sets both cards aside and undo restores their original zones", () => {
   const deck = { ...deckFixture(), main: [{ qty: 100, name: "Main Card" }] };
   const started = createConstructionSession(deck);
-  const rejected = returnVersusComparison(started, [
+  const rejected = setAsideVersusPair(started, [
     { name: "Main Card", source: "main" },
     { name: "Candidate A", source: "pool" },
   ]);
-  assert.deepEqual(constructionCounts(rejected), { main: 100, pool: 4, setAside: 0 });
-  assert.equal(rejected.history.length, 0);
-  assert.match(rejected.notice, /returned to the main deck/);
+  assert.deepEqual(constructionCounts(rejected), { main: 99, pool: 3, setAside: 2 });
+  assert.equal(rejected.setAside.find((entry) => entry.name === "Main Card").qty, 1);
+  assert.equal(rejected.setAside.find((entry) => entry.name === "Candidate A").qty, 1);
+  assert.equal(rejected.history.length, 1);
+  assert.deepEqual(constructionCounts(undoConstructionAction(rejected)), { main: 100, pool: 4, setAside: 0 });
 });
 
 test("explicit pick-one set aside remains recoverable through restart and undo", () => {

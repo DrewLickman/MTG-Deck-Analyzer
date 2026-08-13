@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  addCandidateLandsToMain,
   addCandidateToMain,
   applyConstructionSession,
   chooseVersusCandidate,
@@ -73,6 +74,41 @@ test("moving an empty main deck is a no-op", () => {
   assert.equal(reset.main.length, 0);
   assert.equal(reset.history.length, 1);
   assert.equal(moveMainToCandidatePool(reset), reset);
+});
+
+test("bulk land add moves every selected pool quantity, preserves nonlands, and supports undo", () => {
+  const deck = {
+    ...deckFixture(),
+    sideboard: [
+      { qty: 2, name: "Island" },
+      { qty: 1, name: "Command Tower" },
+      { qty: 1, name: "Nonland Candidate" },
+    ],
+  };
+  const started = createConstructionSession(deck);
+  const added = addCandidateLandsToMain(started, ["Island", "Command Tower"]);
+
+  assert.deepEqual(constructionCounts(added), { main: 100, pool: 1, setAside: 0 });
+  assert.equal(added.main.find((entry) => entry.name === "Island").qty, 2);
+  assert.equal(added.main.find((entry) => entry.name === "Command Tower").qty, 1);
+  assert.equal(added.pool.find((entry) => entry.name === "Nonland Candidate").qty, 1);
+  assert.match(added.notice, /Moved 3 candidate-pool lands/);
+
+  const applied = applyConstructionSession(deck, added);
+  assert.equal(applied.cardCount, 100);
+  assert.equal(applied.main.find((entry) => entry.name === "Island").qty, 2);
+  assert.equal(applied.sideboard.find((entry) => entry.name === "Nonland Candidate").qty, 1);
+  assert.deepEqual(applied.commanders, deck.commanders);
+
+  const undone = undoConstructionAction(added);
+  assert.deepEqual(constructionCounts(undone), { main: 97, pool: 4, setAside: 0 });
+  assert.equal(undone.pool.find((entry) => entry.name === "Island").qty, 2);
+});
+
+test("bulk land add with no recognized names is a no-op", () => {
+  const started = createConstructionSession(deckFixture());
+  assert.equal(addCandidateLandsToMain(started, []), started);
+  assert.equal(addCandidateLandsToMain(started, ["Unknown land-like name"]), started);
 });
 
 test("versus moves only the winner and leaves the loser in the pool", () => {

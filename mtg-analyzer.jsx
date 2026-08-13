@@ -1,10 +1,11 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, normalizeName } from "./lib/cardUtils.mjs";
+import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, formatTextSymbols, getCardText, getManaCost, getManaColorKeys, getRoleKeys, isLand, normalizeName } from "./lib/cardUtils.mjs";
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
-import { addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveMainToCandidatePool, restartConstructionSession, returnVersusCandidates, returnVersusComparison, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, undoConstructionAction } from "./lib/deckConstruction.mjs";
+import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveMainToCandidatePool, restartConstructionSession, returnVersusCandidates, returnVersusComparison, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, undoConstructionAction } from "./lib/deckConstruction.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
@@ -186,30 +187,36 @@ function CardPreview({ card, name }) {
     window.requestAnimationFrame(updatePreviewPosition);
   };
 
-  return (
-    <div ref={anchorRef} className="group relative inline-flex" onMouseEnter={showPreview} onMouseLeave={() => setOpen(false)}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((current) => !current);
-          if (!open) showPreview();
-        }}
-        className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 group-hover:border-amber-500 group-hover:text-amber-200"
-      >
-        {name}
-      </button>
-      <div
-        ref={previewRef}
-        className={`pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden group-hover:block"}`}
-        style={previewPosition ? { top: previewPosition.top, left: previewPosition.left, width: previewPosition.width, maxHeight: previewPosition.maxHeight } : undefined}
-      >
-        {imageUrl ? (
-          <img src={imageUrl} alt={name} className="w-full rounded-md" loading="lazy" />
-        ) : (
-          <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
-        )}
-      </div>
+  const preview = (
+    <div
+      ref={previewRef}
+      className={`pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden"}`}
+      style={previewPosition ? { top: previewPosition.top, left: previewPosition.left, width: previewPosition.width, maxHeight: previewPosition.maxHeight } : undefined}
+    >
+      {imageUrl ? (
+        <img src={imageUrl} alt={name} className="w-full rounded-md" loading="lazy" />
+      ) : (
+        <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
+      )}
     </div>
+  );
+
+  return (
+    <>
+      <div ref={anchorRef} className="group relative inline-flex" onMouseEnter={showPreview} onMouseLeave={() => setOpen(false)}>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen((current) => !current);
+            if (!open) showPreview();
+          }}
+          className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 group-hover:border-amber-500 group-hover:text-amber-200"
+        >
+          {name}
+        </button>
+      </div>
+      {open && typeof document !== "undefined" ? createPortal(preview, document.body) : null}
+    </>
   );
 }
 
@@ -357,6 +364,7 @@ function InputControls({
   fullPage = false,
   showTitle = true,
   compact = false,
+  sidebar = false,
 }) {
   return (
     <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : compact ? "rounded-lg border border-neutral-800 bg-neutral-950/95 p-3 shadow-2xl shadow-black/20 sm:p-4" : ""}>
@@ -379,7 +387,7 @@ function InputControls({
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Moxfield Import</div>
           <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>
         </div>
-        <div className={`grid gap-2 ${fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
+        <div className={`grid gap-2 ${sidebar ? "" : fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
           <input
             aria-label="Moxfield deck URL"
             value={moxfieldUrl}
@@ -2202,17 +2210,39 @@ function ConstructionZone({ title, count, entries, cardMap, emptyText, tone = "n
 }
 
 function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analysisReady }) {
-  const [mode, setMode] = useState("pick");
+  const [mode, setMode] = useState("versus");
   const [drawnCards, setDrawnCards] = useState([]);
   const [moveMainConfirmOpen, setMoveMainConfirmOpen] = useState(false);
+  const initialSessionRef = useRef(session.initial);
   const counts = constructionCounts(session);
   const drawCount = mode === "versus" ? 2 : 1;
   const mainSignature = session.main.map((entry) => `${normalizeName(entry.name)}:${entry.qty}`).join("|");
   const poolSignature = session.pool.map((entry) => `${normalizeName(entry.name)}:${entry.qty}`).join("|");
   const draftSignature = `${mode}|${mainSignature}|${poolSignature}`;
-  const cardsNeeded = Math.max(0, deck.expectedMainCount - counts.main);
-  const excessCards = Math.max(0, counts.main - deck.expectedMainCount);
   const canMoveMain = counts.main > 0;
+  const candidateLandEntries = useMemo(
+    () => session.pool.filter((entry) => isLand(findCard(cardMap, entry.name))),
+    [cardMap, session.pool],
+  );
+  const candidateLandCount = candidateLandEntries.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+  const canAddCandidateLands = candidateLandCount > 0;
+  const commanderCount = deck.commanders.reduce((sum, entry) => sum + entry.qty, 0);
+  const totalDeckCount = counts.main + commanderCount;
+  const totalCardsNeeded = Math.max(0, 100 - totalDeckCount);
+  const totalCardsOver = Math.max(0, totalDeckCount - 100);
+  const totalDeckSub = totalDeckCount === 100
+    ? "Commander target reached"
+    : totalCardsNeeded
+      ? `${totalCardsNeeded} card${totalCardsNeeded === 1 ? "" : "s"} still needed`
+      : `${totalCardsOver} over 100-card target`;
+  const shouldOfferMainDraft = counts.main > deck.expectedMainCount && counts.pool < 2;
+
+  useEffect(() => {
+    if (initialSessionRef.current === session.initial) return;
+    initialSessionRef.current = session.initial;
+    setMode("versus");
+    setDrawnCards([]);
+  }, [session.initial]);
 
   const drawCards = useCallback((sourceSession = session) => {
     const sourceCounts = constructionCounts(sourceSession);
@@ -2250,7 +2280,6 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
   };
 
   const roleSignals = (analysis.structure?.roleBalance || []).slice(0, 5);
-  const totalDeckCount = counts.main + deck.commanders.reduce((sum, entry) => sum + entry.qty, 0);
 
   return (
     <div className="space-y-4">
@@ -2263,14 +2292,16 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => onAction({ type: "undo" })} disabled={!session.history.length} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Undo</button>
-            <button type="button" onClick={() => onAction({ type: "restart" })} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-rose-700 hover:text-rose-200">Restart draft</button>
-            <button type="button" onClick={() => canMoveMain && setMoveMainConfirmOpen(true)} disabled={!canMoveMain} className="min-h-10 rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm font-semibold text-amber-100 hover:border-amber-500 hover:text-amber-50 disabled:cursor-not-allowed disabled:opacity-40">Move Main Deck to Sideboard</button>
+            <button type="button" onClick={() => { onAction({ type: "restart" }); setMode("versus"); setDrawnCards([]); }} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-rose-700 hover:text-rose-200">Restart draft</button>
+            <button type="button" onClick={() => { if (!canMoveMain) return; setMode("versus"); setMoveMainConfirmOpen(true); }} disabled={!canMoveMain} className="min-h-10 rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm font-semibold text-amber-100 hover:border-amber-500 hover:text-amber-50 disabled:cursor-not-allowed disabled:opacity-40">Move Main Deck to Sideboard</button>
+            <button type="button" onClick={() => { if (!canAddCandidateLands) return; const next = onAction({ type: "addCandidateLands", names: candidateLandEntries.map((entry) => entry.name) }); if (next !== session) setDrawnCards([]); }} disabled={!canAddCandidateLands} title={canAddCandidateLands ? `Move ${candidateLandCount} recognized land${candidateLandCount === 1 ? "" : "s"} to the main deck` : "No recognized land cards in the candidate pool"} className="min-h-10 rounded border border-emerald-800 bg-emerald-950/30 px-3 py-2 text-sm font-semibold text-emerald-100 hover:border-emerald-500 hover:text-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">Add all candidate-pool lands</button>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <Metric label="Main Deck" value={`${counts.main}/${deck.expectedMainCount}`} tone={counts.main === deck.expectedMainCount ? "good" : "warn"} sub={cardsNeeded ? `${cardsNeeded} still needed` : excessCards ? `${excessCards} over target` : "Target reached"} />
-          <Metric label="Total Deck" value={`${totalDeckCount}/100`} tone={totalDeckCount === 100 ? "good" : "warn"} sub={`${deck.commanders.length} command-zone card${deck.commanders.length === 1 ? "" : "s"}`} />
+        {!canAddCandidateLands && <div className="mt-2 text-xs text-neutral-500">No recognized land cards are available in the candidate pool. Unknown card metadata stays in the pool.</div>}
+
+        <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3">
+          <Metric label="Deck Size" value={`${totalDeckCount}/100`} tone={totalDeckCount === 100 ? "good" : "warn"} sub={totalDeckSub} />
           <Metric label="Candidate Pool" value={counts.pool} tone={counts.pool ? "neutral" : "warn"} sub="Moxfield sideboard" />
           <Metric label="Set Aside" value={counts.setAside} tone={counts.setAside ? "bad" : "neutral"} sub="Excluded this session" />
         </div>
@@ -2281,7 +2312,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
             <div className="font-semibold">Move the entire current main deck?</div>
             <p className="mt-1 leading-6 text-amber-100/80">This will move all {counts.main} current main-deck cards into the Moxfield sideboard/candidate pool, combine them with the cards already there, and empty the main deck for drafting. Command-zone cards stay separate and are not moved.</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" onClick={() => { onAction({ type: "moveMainToPool" }); setMoveMainConfirmOpen(false); }} className="min-h-10 rounded bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-amber-400">Confirm move</button>
+              <button type="button" onClick={() => { onAction({ type: "moveMainToPool" }); setMode("versus"); setDrawnCards([]); setMoveMainConfirmOpen(false); }} className="min-h-10 rounded bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-amber-400">Confirm move</button>
               <button type="button" onClick={() => setMoveMainConfirmOpen(false)} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-200 hover:border-neutral-500">Cancel</button>
             </div>
           </div>
@@ -2302,6 +2333,13 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         </div>
 
         <div className="mt-4">
+          {shouldOfferMainDraft && (
+            <div className="mb-3 rounded-lg border border-amber-700 bg-amber-950/40 p-4 text-amber-50">
+              <div className="font-semibold">Start draft from the oversized main deck</div>
+              <p className="mt-1 text-sm leading-6 text-amber-100/80">The candidate pool has fewer than two cards. Move all {counts.main} main-deck cards into the candidate pool, empty the main deck, and rebuild with Versus. Your commander stays separate.</p>
+              <button type="button" onClick={() => { setMode("versus"); setMoveMainConfirmOpen(true); }} className="mt-3 min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-amber-400">Move all main-deck cards to candidate pool</button>
+            </div>
+          )}
           {drawnCards.length === (mode === "pick" ? 1 : 2) ? (
             <div className={`grid gap-3 ${mode === "versus" ? "xl:grid-cols-2" : "mx-auto max-w-3xl"}`}>
               {drawnCards.map((card, index) => {
@@ -2325,8 +2363,8 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-neutral-700 bg-neutral-950 p-8 text-center">
-              <div className="text-sm font-semibold text-neutral-200">{counts.pool ? (mode === "versus" ? (versusNeedsSwap ? "Versus needs one main-deck card and one candidate-pool card." : "Versus needs at least two distinct candidate-pool cards.") : "No card drawn yet.") : "Candidate pool complete."}</div>
-              <div className="mt-1 text-xs text-neutral-500">{counts.pool ? (versusNeedsSwap ? "Choose or set aside either card; the other returns to its original zone." : "Use Pick One when only one candidate remains.") : "Undo or restart if you want to revisit a decision."}</div>
+              <div className="text-sm font-semibold text-neutral-200">{shouldOfferMainDraft ? "Start a fresh draft from the oversized main deck." : counts.pool ? (mode === "versus" ? (versusNeedsSwap ? "Versus needs one main-deck card and one candidate-pool card." : "Versus needs at least two distinct candidate-pool cards.") : "No card drawn yet.") : "Candidate pool complete."}</div>
+              <div className="mt-1 text-xs text-neutral-500">{shouldOfferMainDraft ? "The quick action above moves the full main deck into the candidate pool after confirmation." : counts.pool ? (versusNeedsSwap ? "Choose or set aside either card; the other returns to its original zone." : "Use Pick One when only one candidate remains.") : "Undo or restart if you want to revisit a decision."}</div>
             </div>
           )}
         </div>
@@ -2753,9 +2791,12 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
   );
 }
 
-function DesktopSidebar({ activeTab, setActiveTab }) {
+function DesktopSidebar({ activeTab, setActiveTab, inputProps }) {
   return (
     <aside className="sticky top-0 z-40 hidden h-screen flex-col border-r border-neutral-800 bg-neutral-950/95 lg:flex">
+      <div className="border-b border-neutral-800 p-3">
+        <InputControls {...inputProps} compact showTitle={false} sidebar />
+      </div>
       <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-3">
         <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">Analysis</div>
         <div className="space-y-1">
@@ -2790,15 +2831,7 @@ function CalculatingAnalysisPanel() {
   );
 }
 
-function DesktopImportBar({ inputProps }) {
-  return (
-    <section aria-label="Desktop Moxfield import" className="sticky top-0 z-30 hidden lg:block">
-      <InputControls {...inputProps} compact showTitle={false} />
-    </section>
-  );
-}
-
-function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction, inputProps }) {
+function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -2839,8 +2872,6 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
   return (
     <main className="min-w-0 p-3 pb-32 sm:p-5 sm:pb-32 md:pb-5 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-5">
-        <DesktopImportBar inputProps={inputProps} />
-
         {(cardDataLoading || notFound.length > 0) && (
           <div className="space-y-4">
           {cardDataLoading && (
@@ -3080,6 +3111,7 @@ export default function App() {
 
     let next = current;
     if (action.type === "add") next = addCandidateToMain(current, action.name);
+    else if (action.type === "addCandidateLands") next = addCandidateLandsToMain(current, action.names);
     else if (action.type === "moveMainToPool") next = moveMainToCandidatePool(current);
     else if (action.type === "setAside") next = setAsideCandidates(current, action.names);
     else if (action.type === "versus") next = chooseVersusCandidate(current, action.winnerName, action.loserName);
@@ -3153,8 +3185,8 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[208px_minmax(0,1fr)]">
-      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+    <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
+      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} inputProps={inputProps} />
       <button
         type="button"
         onClick={() => setSidePanelOpen((open) => !open)}
@@ -3171,7 +3203,7 @@ export default function App() {
         sidePanelOpen={sidePanelOpen}
         {...inputProps}
       />
-      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} inputProps={inputProps} />
+      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} />
     </div>
   );
 }

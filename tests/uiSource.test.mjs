@@ -18,12 +18,14 @@ test("card previews prefer Scryfall image URLs and degrade gracefully", () => {
   assert.match(source, /function CardPreview/);
   assert.match(source, /const \[open, setOpen\] = useState\(false\)/);
   assert.match(source, /setOpen\(\(current\) => !current\)/);
-  assert.match(source, /group-hover:block/);
+  assert.match(source, /createPortal\(preview, document\.body\)/);
+  assert.match(source, /open \? "block" : "hidden"/);
   assert.match(source, /const \[previewPosition, setPreviewPosition\]/);
   assert.match(source, /getBoundingClientRect\(\)/);
   assert.match(source, /const placeAbove/);
   assert.match(source, /fixed z-50/);
   assert.match(source, /maxHeight: previewPosition\.maxHeight/);
+  assert.match(source, /max-h-60 space-y-1 overflow-y-auto p-2/);
   assert.match(source, /cardPreviewUrl\(card\)/);
   assert.match(source, /card\?\.image_uris\?\.normal/);
   assert.match(source, /card_faces\?\.find/);
@@ -91,22 +93,22 @@ test("deck identity and snapshot render only on Home below the tablet tabs", () 
 
 test("desktop navigation uses a divided left sidebar without a redundant import pop-out", () => {
   assert.match(source, /function DesktopSidebar/);
-  assert.match(source, /lg:grid-cols-\[208px_minmax\(0,1fr\)\]/);
+  assert.match(source, /lg:grid-cols-\[280px_minmax\(0,1fr\)\]/);
   assert.match(source, /h-screen flex-col border-r border-neutral-800/);
   assert.match(source, /aria-label="Analysis sections"/);
-  assert.match(source, /function DesktopSidebar\(\{ activeTab, setActiveTab \}\)/);
+  assert.match(source, /function DesktopSidebar\(\{ activeTab, setActiveTab, inputProps \}\)/);
   assert.match(source, /data-desktop-tab=\{vertical \? tab\.id : undefined\}/);
   assert.match(source, /setActiveTab=\{setActiveTab\} vertical/);
   assert.match(source, /md:flex lg:hidden/);
   const sidebar = source.slice(source.indexOf("function DesktopSidebar"), source.indexOf("function MobileTabBar"));
-  assert.doesNotMatch(sidebar, /Deck settings|Import & review|InputControls/);
+  assert.match(sidebar, /<InputControls \{\.\.\.inputProps\} compact showTitle=\{false\} sidebar \/>/);
 });
 
-test("desktop keeps a sticky shared Moxfield importer while narrow layouts retain the panel", () => {
-  assert.match(source, /function DesktopImportBar/);
-  assert.match(source, /aria-label="Desktop Moxfield import"/);
-  assert.match(source, /className="sticky top-0 z-30 hidden lg:block"/);
-  assert.match(source, /<InputControls \{\.\.\.inputProps\} compact showTitle=\{false\} \/>/);
+test("desktop places the Moxfield importer in the top-left sidebar while narrow layouts retain the panel", () => {
+  assert.doesNotMatch(source, /function DesktopImportBar/);
+  assert.doesNotMatch(source, /aria-label="Desktop Moxfield import"/);
+  assert.doesNotMatch(source, /sticky top-0 z-30 hidden lg:block/);
+  assert.match(source, /<InputControls \{\.\.\.inputProps\} compact showTitle=\{false\} sidebar \/>/);
   assert.match(source, /inputProps=\{inputProps\}/);
   assert.match(source, /<aside aria-label="Deck settings" className="border-b border-neutral-800 bg-neutral-950\/95 p-3 lg:hidden">/);
   assert.match(source, /className="absolute left-2 top-2 z-40 .* lg:hidden"/);
@@ -149,6 +151,16 @@ test("build tab provides a three-zone Moxfield sideboard construction workflow",
   assert.match(source, /disabled=\{!canMoveMain\}/);
   assert.match(source, /type: "moveMainToPool"/);
   assert.match(source, /moveMainToCandidatePool/);
+  assert.match(source, /isLand\(findCard\(cardMap, entry\.name\)\)/);
+  assert.match(source, /Add all candidate-pool lands/);
+  assert.match(source, /No recognized land cards are available in the candidate pool/);
+  assert.match(source, /type: "addCandidateLands"/);
+  assert.match(source, /addCandidateLandsToMain/);
+  assert.match(source, /label="Deck Size"/);
+  assert.doesNotMatch(source, /Metric label="Total Deck"/);
+  assert.match(source, /shouldOfferMainDraft/);
+  assert.match(source, /Start draft from the oversized main deck/);
+  assert.match(source, /setMode\("versus"\)/);
   assert.match(source, /title="Main Deck"/);
   assert.match(source, /title="Candidate Pool"/);
   assert.match(source, /title="Set Aside"/);

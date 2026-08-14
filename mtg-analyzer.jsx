@@ -505,7 +505,7 @@ function InputControls({
   sidebar = false,
 }) {
   return (
-    <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : compact ? "rounded-lg border border-neutral-800 bg-neutral-950/95 p-3 shadow-2xl shadow-black/20 sm:p-4" : ""}>
+    <div className={fullPage ? "w-full rounded-2xl border border-neutral-800 bg-neutral-950/95 p-6 shadow-2xl shadow-black/40 sm:p-10" : compact ? (sidebar ? "rounded-lg border border-neutral-800 bg-neutral-950/95 p-2 shadow-2xl shadow-black/20" : "rounded-lg border border-neutral-800 bg-neutral-950/95 p-3 shadow-2xl shadow-black/20 sm:p-4") : ""}>
       {showTitle && (
         <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
@@ -519,25 +519,25 @@ function InputControls({
           event.preventDefault();
           onImport();
         }}
-        className={`${showTitle ? (fullPage ? "mt-8" : compact ? "mt-0" : "mt-5") : compact ? "mt-0" : "mt-3"} space-y-3`}
+        className={`${showTitle ? (fullPage ? "mt-8" : compact ? "mt-0" : "mt-5") : compact ? "mt-0" : "mt-3"} ${sidebar ? "space-y-2" : "space-y-3"}`}
       >
         <div className={fullPage ? "text-center" : ""}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Moxfield Import</div>
-          <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>
+          <div className={sidebar ? "text-[10px] uppercase tracking-wide text-neutral-500" : "text-[11px] uppercase tracking-wide text-neutral-500"}>Moxfield Import</div>
+          {!sidebar && <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>}
         </div>
-        <div className={`grid gap-2 ${sidebar ? "" : fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
+        <div className={`grid ${sidebar ? "gap-1.5" : "gap-2"} ${sidebar ? "" : fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
           <input
             aria-label="Moxfield deck URL"
             value={moxfieldUrl}
             onChange={(event) => setMoxfieldUrl(event.target.value)}
             onPaste={onMoxfieldPaste}
             placeholder="https://moxfield.com/decks/..."
-            className="min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"
+            className={sidebar ? "min-h-9 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" : "min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"}
           />
-          <button type="button" onClick={onClipboardPaste} disabled={loading} className="min-h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600">
+          <button type="button" onClick={onClipboardPaste} disabled={loading} className={sidebar ? "min-h-9 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600" : "min-h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600"}>
             Paste clipboard
           </button>
-          <button type="submit" disabled={loading || !moxfieldUrl.trim()} className="min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400">
+          <button type="submit" disabled={loading || !moxfieldUrl.trim()} className={sidebar ? "min-h-9 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400" : "min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"}>
             Import & Analyze
           </button>
         </div>
@@ -3077,6 +3077,7 @@ function TabIcon({ tabId }) {
 }
 
 function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = false }) {
+  const sizeClass = mobile ? "min-h-12 min-w-0 justify-center px-1 py-2 text-xs" : vertical ? "min-h-9 w-full justify-start px-2.5 py-1.5 text-left text-[13px]" : "min-h-10 px-3 py-2 text-sm";
   return (
     <button
       key={tab.id}
@@ -3085,7 +3086,7 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
       data-desktop-tab={vertical ? tab.id : undefined}
       aria-current={activeTab === tab.id ? "page" : undefined}
       onClick={() => setActiveTab(tab.id)}
-      className={`${mobile ? "min-h-12 min-w-0 justify-center px-1 py-2 text-xs" : vertical ? "min-h-11 w-full justify-start px-3 py-2 text-left text-sm" : "min-h-10 px-3 py-2 text-sm"} inline-flex shrink-0 items-center gap-2 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+      className={`${sizeClass} inline-flex shrink-0 items-center ${vertical ? "gap-1.5" : "gap-2"} rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
     >
       <TabIcon tabId={tab.id} />
       <span>{tab.label}</span>
@@ -3096,14 +3097,14 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
 function DesktopSidebar({ activeTab, setActiveTab, inputProps }) {
   return (
     <aside className="sticky top-0 z-40 hidden h-screen flex-col border-r border-neutral-800 bg-neutral-950/95 lg:flex">
-      <div className="border-b border-neutral-800 p-3">
+      <div className="border-b border-neutral-800 p-2">
         <InputControls {...inputProps} compact showTitle={false} sidebar />
       </div>
-      <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-3">
-        <div className="space-y-5">
+      <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="space-y-3">
           {TAB_GROUPS.map((group) => (
             <section key={group.id}>
-              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">{group.label}</div>
+              <div className="px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">{group.label}</div>
               <div className="space-y-1">{group.tabs.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} vertical />)}</div>
             </section>
           ))}
@@ -3516,7 +3517,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="relative min-h-screen bg-neutral-950 text-neutral-100 lg:grid lg:grid-cols-[256px_minmax(0,1fr)]">
       <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} inputProps={inputProps} />
       <button
         type="button"

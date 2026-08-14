@@ -133,6 +133,15 @@ test("navigation groups jobs and avoids horizontal navigation scrollers", () => 
   assert.doesNotMatch(navigation, /overflow-x-auto/);
 });
 
+test("desktop sidebar stays compact before it needs to scroll", () => {
+  const desktopSidebar = source.slice(source.indexOf("function DesktopSidebar"), source.indexOf("function TabletTabNav"));
+  assert.match(source, /lg:grid-cols-\[256px_minmax\(0,1fr\)\]/);
+  assert.match(source, /const sizeClass = mobile \? "min-h-12[\s\S]*min-h-9 w-full justify-start px-2\.5 py-1\.5 text-left text-\[13px\]/);
+  assert.match(source, /sidebar \? "space-y-2" : "space-y-3"/);
+  assert.match(desktopSidebar, /overflow-y-auto p-2/);
+  assert.match(desktopSidebar, /space-y-3/);
+});
+
 test("Moxfield import remains the only entry flow and analysis is preflighted before commit", () => {
   assert.match(source, /Moxfield Import/);
   assert.match(source, /Import & Analyze/);

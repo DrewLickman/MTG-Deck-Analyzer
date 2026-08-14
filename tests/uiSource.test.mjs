@@ -14,23 +14,30 @@ test("card UI renders dense table controls instead of grouped evidence first", (
   assert.doesNotMatch(source, /<CardGroupSections analysis=\{analysis\} cardMap=\{cardMap\} \/>/);
 });
 
-test("card previews prefer Scryfall image URLs and degrade gracefully", () => {
+test("reduced card images open full-resolution viewport-safe previews with oracle text", () => {
+  assert.match(source, /function CardHoverPreview/);
+  assert.match(source, /function PreviewableCardImage/);
   assert.match(source, /function CardPreview/);
-  assert.match(source, /const \[open, setOpen\] = useState\(false\)/);
-  assert.match(source, /setOpen\(\(current\) => !current\)/);
+  assert.match(source, /function cardFullPreviewUrl/);
+  assert.match(source, /card\?\.image_uris\?\.png/);
+  assert.match(source, /faceImages\?\.png/);
+  assert.match(source, /function cardOracleText/);
+  assert.match(source, /face\.oracle_text/);
+  assert.match(source, /Oracle text/);
   assert.match(source, /createPortal\(preview, document\.body\)/);
-  assert.match(source, /open \? "block" : "hidden"/);
-  assert.match(source, /const \[previewPosition, setPreviewPosition\]/);
-  assert.match(source, /getBoundingClientRect\(\)/);
-  assert.match(source, /const placeAbove/);
+  assert.match(source, /window\.matchMedia\("\(min-width: 1024px\) and \(hover: hover\) and \(pointer: fine\)"\)/);
+  assert.match(source, /const fitsRight/);
+  assert.match(source, /const fitsLeft/);
+  assert.match(source, /Math\.min\(unclampedLeft/);
+  assert.match(source, /Math\.min\(unclampedTop/);
   assert.match(source, /fixed z-50/);
   assert.match(source, /maxHeight: previewPosition\.maxHeight/);
-  assert.match(source, /max-h-60 space-y-1 overflow-y-auto p-2/);
-  assert.match(source, /cardPreviewUrl\(card\)/);
+  assert.match(source, /overflow-y-auto/);
+  assert.match(source, /onLoad=\{updatePreviewPosition\}/);
   assert.match(source, /card\?\.image_uris\?\.normal/);
   assert.match(source, /card_faces\?\.find/);
-  assert.match(source, /<img src=\{imageUrl\}/);
-  assert.match(source, /No image available/);
+  assert.ok((source.match(/<PreviewableCardImage/g) || []).length >= 5);
+  assert.doesNotMatch(source, /<img src=\{cardPreviewUrl\(card\)\}/);
 });
 
 test("mana costs render with project mana icon assets", () => {
@@ -316,7 +323,7 @@ test("cuts tab renders a deck-wide visual tier list", () => {
   assert.match(source, /S: \{ label: "S"/);
   assert.match(source, /F: \{ label: "F"/);
   assert.match(source, /function TierListCard/);
-  assert.match(source, /cardPreviewUrl\(item\.card\)/);
+  assert.match(source, /<PreviewableCardImage\s+card=\{item\.card\}/);
   assert.match(source, /<ManaCostDisplay card=\{item\.card\} \/>/);
   assert.match(source, /flex min-h-40 flex-1 flex-col/);
   assert.doesNotMatch(source, /absolute inset-x-0 bottom-0/);

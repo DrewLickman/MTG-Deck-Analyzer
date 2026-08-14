@@ -145,12 +145,43 @@ function cardPreviewUrl(card) {
   return card?.image_uris?.normal || card?.card_faces?.find((face) => face.image_uris?.normal)?.image_uris?.normal || null;
 }
 
-function CardPreview({ card, name }) {
-  const imageUrl = cardPreviewUrl(card);
+function cardFullPreviewUrl(card) {
+  const faceImages = card?.card_faces?.find((face) => face.image_uris)?.image_uris;
+  return card?.image_uris?.png
+    || card?.image_uris?.large
+    || card?.image_uris?.normal
+    || faceImages?.png
+    || faceImages?.large
+    || faceImages?.normal
+    || null;
+}
+
+function cardOracleText(card) {
+  if (card?.oracle_text) return card.oracle_text;
+  return (card?.card_faces || [])
+    .filter((face) => face.oracle_text)
+    .map((face) => `${face.name ? `${face.name}\n` : ""}${face.oracle_text}`)
+    .join("\n\n");
+}
+
+function CardHoverPreview({ card, name, renderTrigger, anchorClassName = "relative block", clickToToggle = false }) {
+  const fullImageUrl = cardFullPreviewUrl(card);
+  const oracleText = cardOracleText(card);
   const [open, setOpen] = useState(false);
   const [previewPosition, setPreviewPosition] = useState(null);
   const anchorRef = useRef(null);
   const previewRef = useRef(null);
+  const closeTimerRef = useRef(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = window.setTimeout(() => setOpen(false), 120);
+  }, [cancelClose]);
 
   const updatePreviewPosition = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -158,65 +189,132 @@ function CardPreview({ card, name }) {
     const preview = previewRef.current?.getBoundingClientRect();
     if (!anchor) return;
 
-    const viewportPadding = 8;
-    const width = Math.min(224, Math.max(0, window.innerWidth - viewportPadding * 2));
-    const measuredHeight = preview?.height || Math.min(320, window.innerHeight - viewportPadding * 2);
-    const height = Math.min(measuredHeight, Math.max(160, window.innerHeight - viewportPadding * 2));
-    const spaceBelow = window.innerHeight - anchor.bottom - viewportPadding;
-    const placeAbove = spaceBelow < height + 8 && anchor.top > height + viewportPadding;
-    const unclampedTop = placeAbove ? anchor.top - height - 8 : anchor.bottom + 8;
+    const viewportPadding = 12;
+    const gap = 12;
+    const maxHeight = Math.max(0, window.innerHeight - viewportPadding * 2);
+    const width = Math.min(360, Math.max(0, window.innerWidth - viewportPadding * 2));
+    const height = Math.min(preview?.height || maxHeight, maxHeight);
+    const fitsRight = anchor.right + gap + width <= window.innerWidth - viewportPadding;
+    const fitsLeft = anchor.left - gap - width >= viewportPadding;
+    const unclampedLeft = fitsRight
+      ? anchor.right + gap
+      : fitsLeft
+        ? anchor.left - gap - width
+        : anchor.left + anchor.width / 2 - width / 2;
+    const left = Math.max(viewportPadding, Math.min(unclampedLeft, window.innerWidth - width - viewportPadding));
+    const unclampedTop = anchor.top + anchor.height / 2 - height / 2;
     const top = Math.max(viewportPadding, Math.min(unclampedTop, window.innerHeight - height - viewportPadding));
-    const left = Math.max(viewportPadding, Math.min(anchor.left, window.innerWidth - width - viewportPadding));
-    setPreviewPosition({ top, left, width, maxHeight: window.innerHeight - viewportPadding * 2 });
+    setPreviewPosition({ top, left, width, maxHeight });
   }, []);
 
   useEffect(() => {
     if (!open) return undefined;
     const frame = window.requestAnimationFrame(updatePreviewPosition);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     window.addEventListener("resize", updatePreviewPosition);
     window.addEventListener("scroll", updatePreviewPosition, true);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", updatePreviewPosition);
       window.removeEventListener("scroll", updatePreviewPosition, true);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, updatePreviewPosition]);
 
-  const showPreview = () => {
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  const showDesktopPreview = () => {
+    if (!fullImageUrl || typeof window === "undefined") return;
+    if (!window.matchMedia("(min-width: 1024px) and (hover: hover) and (pointer: fine)").matches) return;
+    cancelClose();
     setOpen(true);
+    window.requestAnimationFrame(updatePreviewPosition);
+  };
+
+  const togglePreview = () => {
+    if (!fullImageUrl) return;
+    cancelClose();
+    setOpen((current) => !current);
     window.requestAnimationFrame(updatePreviewPosition);
   };
 
   const preview = (
     <div
       ref={previewRef}
-      className={`pointer-events-none fixed z-50 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-950 p-2 shadow-2xl ${open ? "block" : "hidden"}`}
-      style={previewPosition ? { top: previewPosition.top, left: previewPosition.left, width: previewPosition.width, maxHeight: previewPosition.maxHeight } : undefined}
+      role="tooltip"
+      onMouseEnter={cancelClose}
+      onMouseLeave={scheduleClose}
+      className="fixed z-50 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-950 p-2 shadow-2xl shadow-black/70"
+      style={previewPosition
+        ? { top: previewPosition.top, left: previewPosition.left, width: previewPosition.width, maxHeight: previewPosition.maxHeight }
+        : { visibility: "hidden" }}
     >
-      {imageUrl ? (
-        <img src={imageUrl} alt={name} className="w-full rounded-md" loading="lazy" />
+      {fullImageUrl ? (
+        <img src={fullImageUrl} alt={name} className="mx-auto max-h-[62vh] w-full rounded-lg object-contain" onLoad={updatePreviewPosition} />
       ) : (
         <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
       )}
+      <div className="mt-2 rounded-lg border border-neutral-800 bg-neutral-900/90 p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-400">Oracle text</div>
+        <div className="mt-1 whitespace-pre-line text-sm leading-5 text-neutral-200">{formatTextSymbols(oracleText) || "No oracle text available."}</div>
+      </div>
     </div>
   );
 
   return (
     <>
-      <div ref={anchorRef} className="group relative inline-flex" onMouseEnter={showPreview} onMouseLeave={() => setOpen(false)}>
+      <div
+        ref={anchorRef}
+        className={anchorClassName}
+        onMouseEnter={showDesktopPreview}
+        onMouseLeave={scheduleClose}
+        onFocus={showDesktopPreview}
+        onBlur={scheduleClose}
+        onClick={clickToToggle ? togglePreview : undefined}
+      >
+        {renderTrigger(open)}
+      </div>
+      {open && typeof document !== "undefined" ? createPortal(preview, document.body) : null}
+    </>
+  );
+}
+
+function PreviewableCardImage({ card, name, className, fallbackClassName, wrapperClassName = "block w-full" }) {
+  const imageUrl = cardPreviewUrl(card);
+  return (
+    <CardHoverPreview
+      card={card}
+      name={name}
+      anchorClassName={wrapperClassName}
+      renderTrigger={() => imageUrl ? (
+        <img src={imageUrl} alt={name} className={className} loading="lazy" />
+      ) : (
+        <div className={fallbackClassName}>No image available</div>
+      )}
+    />
+  );
+}
+
+function CardPreview({ card, name }) {
+  return (
+    <CardHoverPreview
+      card={card}
+      name={name}
+      clickToToggle
+      anchorClassName="group relative inline-flex"
+      renderTrigger={(open) => (
         <button
           type="button"
-          onClick={() => {
-            setOpen((current) => !current);
-            if (!open) showPreview();
-          }}
+          aria-expanded={open}
           className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 group-hover:border-amber-500 group-hover:text-amber-200"
         >
           {name}
         </button>
-      </div>
-      {open && typeof document !== "undefined" ? createPortal(preview, document.body) : null}
-    </>
+      )}
+    />
   );
 }
 
@@ -1470,13 +1568,12 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
               {isExpanded && (
                 <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
                   <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
-                    <div>
-                      {cardPreviewUrl(card) ? (
-                        <img src={cardPreviewUrl(card)} alt={score.name} className="w-full rounded-md border border-neutral-800" loading="lazy" />
-                      ) : (
-                        <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500">No image available</div>
-                      )}
-                    </div>
+                    <PreviewableCardImage
+                      card={card}
+                      name={score.name}
+                      className="w-full rounded-md border border-neutral-800"
+                      fallbackClassName="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500"
+                    />
                     <div>
                       <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                       <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
@@ -1557,13 +1654,12 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                       <td></td>
                       <td colSpan={6} className="px-4 py-4">
                         <div className="grid gap-3 lg:grid-cols-[180px_220px_1fr]">
-                          <div>
-                            {cardPreviewUrl(card) ? (
-                              <img src={cardPreviewUrl(card)} alt={score.name} className="w-full rounded-md border border-neutral-800" loading="lazy" />
-                            ) : (
-                              <div className="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500">No image available</div>
-                            )}
-                          </div>
+                          <PreviewableCardImage
+                            card={card}
+                            name={score.name}
+                            className="w-full rounded-md border border-neutral-800"
+                            fallbackClassName="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500"
+                          />
                           <div>
                             <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                             <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
@@ -1606,17 +1702,17 @@ const TIER_META = {
 };
 
 function TierListCard({ item, analysisReady, onDecision }) {
-  const imageUrl = cardPreviewUrl(item.card);
   const candidate = item.cutCandidate;
   const decision = item.decision;
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded border border-neutral-800 bg-neutral-950 shadow-lg">
       <div className="border-b border-neutral-800 bg-neutral-900">
-        {imageUrl ? (
-          <img src={imageUrl} alt={item.name} className="aspect-[5/7] w-full object-cover" loading="lazy" />
-        ) : (
-          <div className="flex aspect-[5/7] w-full items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
-        )}
+        <PreviewableCardImage
+          card={item.card}
+          name={item.name}
+          className="aspect-[5/7] w-full object-cover"
+          fallbackClassName="flex aspect-[5/7] w-full items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500"
+        />
       </div>
       <div className="flex min-h-40 flex-1 flex-col gap-2 p-2">
         <div className="min-h-9 text-xs font-semibold leading-snug text-neutral-100">{item.name}</div>
@@ -2149,20 +2245,21 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
 
 function ConstructionCandidateCard({ name, sourceLabel, analysis, cardMap, children }) {
   const card = findCard(cardMap, name);
-  const imageUrl = cardPreviewUrl(card);
   const candidate = (analysis.sideboardAnalysis || []).find((item) => normalizeName(item.name) === normalizeName(name));
   const roles = getRoleKeys(card).slice(0, 4);
 
   return (
     <article className="overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-lg shadow-black/20">
       <div className="grid min-w-0 gap-0 sm:grid-cols-[minmax(160px,30%)_minmax(0,1fr)]">
-        {imageUrl ? (
-          <div className="flex h-[min(46vh,26rem)] min-h-40 w-full items-center justify-center bg-neutral-900 p-2">
-            <img src={imageUrl} alt={name} className="h-full w-full object-contain" loading="lazy" />
-          </div>
-        ) : (
-          <div className="flex h-[min(46vh,26rem)] min-h-40 items-center justify-center bg-neutral-900 p-4 text-center text-xs text-neutral-500">No image available</div>
-        )}
+        <div className="flex h-[min(46vh,26rem)] min-h-40 w-full items-center justify-center bg-neutral-900 p-2">
+          <PreviewableCardImage
+            card={card}
+            name={name}
+            className="h-full w-full object-contain"
+            fallbackClassName="flex h-full w-full items-center justify-center p-4 text-center text-xs text-neutral-500"
+            wrapperClassName="block h-full w-full"
+          />
+        </div>
         <div className="flex min-w-0 flex-col p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -2599,14 +2696,14 @@ function UpgradesTab({ analysis, analysisReady }) {
 }
 
 function HandCard({ item }) {
-  const imageUrl = cardPreviewUrl(item.card);
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
-      {imageUrl ? (
-        <img src={imageUrl} alt={item.name} className="aspect-[5/7] w-full object-cover" loading="lazy" />
-      ) : (
-        <div className="flex aspect-[5/7] items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500">No image available</div>
-      )}
+      <PreviewableCardImage
+        card={item.card}
+        name={item.name}
+        className="aspect-[5/7] w-full object-cover"
+        fallbackClassName="flex aspect-[5/7] w-full items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500"
+      />
       <div className="flex flex-1 flex-col gap-2 p-2.5">
         <div className="text-sm font-semibold leading-tight text-neutral-100">{item.name}</div>
         <div className="mt-auto flex flex-wrap gap-1">

@@ -59,6 +59,7 @@ test("mana separates generic costs from colored pip demand and uses ordered band
 test("card list reports analyzed nonlands, groups filters, and hides broad cut signals", () => {
   assert.match(source, /Card List/);
   assert.match(source, /analyzedNonLandCount/);
+  assert.match(source, /const analyzedNonLandCount = useMemo\(\(\) => \(analysis\.scores \|\| \[\]\)\.length/);
   assert.match(source, /ROLE_FILTER_GROUPS/);
   assert.match(source, /<optgroup key=\{group\.label\} label=\{group\.label\}>/);
   assert.match(source, /const shortlistLimit = Math\.max\(10/);

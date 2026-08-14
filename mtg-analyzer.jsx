@@ -1271,7 +1271,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
   const expandedSet = useMemo(() => new Set(expanded), [expanded]);
   const shortlistLimit = Math.max(10, analysis.deckSizePlan?.cutsNeeded || 0);
   const cutsByName = useMemo(() => new Map((analysis.cutCandidates || []).slice(0, shortlistLimit).map((candidate) => [normalizeName(candidate.name), candidate])), [analysis.cutCandidates, shortlistLimit]);
-  const analyzedNonLandCount = useMemo(() => (analysis.scores || []).filter((score) => score.zone !== "commanders").length, [analysis.scores]);
+  const analyzedNonLandCount = useMemo(() => (analysis.scores || []).length, [analysis.scores]);
   const rows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const filtered = analysis.scores.filter((score) => {

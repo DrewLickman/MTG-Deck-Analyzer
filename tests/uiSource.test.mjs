@@ -142,8 +142,10 @@ test("desktop sidebar stays compact before it needs to scroll", () => {
   assert.match(desktopSidebar, /space-y-3/);
 });
 
-test("Moxfield import remains the only entry flow and analysis is preflighted before commit", () => {
-  assert.match(source, /Moxfield Import/);
+test("Moxfield and Archidekt share one import flow and analysis is preflighted before commit", () => {
+  assert.match(source, /Deck Import/);
+  assert.match(source, /Moxfield or Archidekt/);
+  assert.match(source, /\/api\/import\/deck/);
   assert.match(source, /Import & Analyze/);
   assert.match(source, /navigator\.clipboard\?\.readText/);
   const analyzeStart = source.indexOf("const analyzeDeckValues = useCallback");

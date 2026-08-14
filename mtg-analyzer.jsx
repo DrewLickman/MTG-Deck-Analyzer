@@ -7,6 +7,7 @@ import { COLOR_HEX, COLOR_LABEL, MANA_CURVE_COLOR_ORDER, ROLE_LABELS, findCard, 
 import { DEFAULT_ANALYSIS_SETTINGS, buildAnalysisPrompt, buildLocalAnalysis, extractJSON, mergeAnalysis, resolveAnalysisSettings } from "./lib/deckAnalysis.mjs";
 import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, chooseVersusCandidate, chooseVersusComparison, constructionCounts, createConstructionSession, drawConstructionCandidates, moveConstructionStack, moveMainToCandidatePool, restartConstructionSession, setAsideCandidates, setAsideVersusCandidate, setAsideVersusComparison, setAsideVersusPair, undoConstructionAction } from "./lib/deckConstruction.mjs";
 import { buildTierRows } from "./lib/deckTiers.mjs";
+import { extractSupportedDeckUrl } from "./lib/deckSource.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
@@ -104,11 +105,6 @@ const ROLE_FILTER_GROUPS = [
     ],
   },
 ];
-
-function extractMoxfieldDeckUrl(value = "") {
-  const match = String(value).trim().match(/https?:\/\/(?:www\.)?moxfield\.com\/decks\/[a-zA-Z0-9_-]+(?:[^\s)"'<>]*)?/i);
-  return match?.[0] || "";
-}
 
 function names(entries = []) {
   return entries.map((entry) => entry.name).join(" + ") || "None";
@@ -491,14 +487,14 @@ function IdentityReview({ deck, onUseFirst, onUseBottom }) {
 
 function InputControls({
   error,
-  moxfieldUrl,
+  deckUrl,
   draftDeck,
   loading,
   progress,
   onClipboardPaste,
   onImport,
-  onMoxfieldPaste,
-  setMoxfieldUrl,
+  onDeckPaste,
+  setDeckUrl,
   fullPage = false,
   showTitle = true,
   compact = false,
@@ -510,7 +506,7 @@ function InputControls({
         <div className={fullPage ? "text-center" : ""}>
           <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">MTG Commander</div>
           <h1 className={`${fullPage ? "mt-2 text-4xl sm:text-5xl" : "mt-1 text-2xl"} font-bold text-neutral-50`}>Deck Analyzer</h1>
-          {fullPage && <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-neutral-400">Import a public Moxfield deck to load its cards and begin the full Commander analysis.</p>}
+          {fullPage && <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-neutral-400">Import a public Moxfield or Archidekt deck to load its cards and begin the full Commander analysis.</p>}
         </div>
       )}
 
@@ -522,22 +518,22 @@ function InputControls({
         className={`${showTitle ? (fullPage ? "mt-8" : compact ? "mt-0" : "mt-5") : compact ? "mt-0" : "mt-3"} ${sidebar ? "space-y-2" : "space-y-3"}`}
       >
         <div className={fullPage ? "text-center" : ""}>
-          <div className={sidebar ? "text-[10px] uppercase tracking-wide text-neutral-500" : "text-[11px] uppercase tracking-wide text-neutral-500"}>Moxfield Import</div>
-          {!sidebar && <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield deck link to import and analyze.</div>}
+          <div className={sidebar ? "text-[10px] uppercase tracking-wide text-neutral-500" : "text-[11px] uppercase tracking-wide text-neutral-500"}>Deck Import</div>
+          {!sidebar && <div className="mt-1 text-xs text-neutral-500">Paste a public Moxfield or Archidekt deck link to import and analyze.</div>}
         </div>
         <div className={`grid ${sidebar ? "gap-1.5" : "gap-2"} ${sidebar ? "" : fullPage || compact ? "sm:grid-cols-[minmax(0,1fr)_auto_auto]" : ""}`}>
           <input
-            aria-label="Moxfield deck URL"
-            value={moxfieldUrl}
-            onChange={(event) => setMoxfieldUrl(event.target.value)}
-            onPaste={onMoxfieldPaste}
-            placeholder="https://moxfield.com/decks/..."
+            aria-label="Moxfield or Archidekt deck URL"
+            value={deckUrl}
+            onChange={(event) => setDeckUrl(event.target.value)}
+            onPaste={onDeckPaste}
+            placeholder="Paste Moxfield or Archidekt URL"
             className={sidebar ? "min-h-9 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" : "min-h-11 min-w-0 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-base text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500 sm:text-sm"}
           />
           <button type="button" onClick={onClipboardPaste} disabled={loading} className={sidebar ? "min-h-9 rounded-lg border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600" : "min-h-11 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm font-semibold text-neutral-200 transition hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-600"}>
             Paste clipboard
           </button>
-          <button type="submit" disabled={loading || !moxfieldUrl.trim()} className={sidebar ? "min-h-9 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400" : "min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"}>
+          <button type="submit" disabled={loading || !deckUrl.trim()} className={sidebar ? "min-h-9 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400" : "min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"}>
             Import & Analyze
           </button>
         </div>
@@ -3282,7 +3278,7 @@ export default function App() {
   const [cmdInput, setCmdInput] = useState("");
   const [companionInput, setCompanionInput] = useState("");
   const [deckInput, setDeckInput] = useState("");
-  const [moxfieldUrl, setMoxfieldUrl] = useState("");
+  const [deckUrl, setDeckUrl] = useState("");
   const [remoteAnalysis, setRemoteAnalysis] = useState(null);
   const [deckModel, setDeckModel] = useState(null);
   const [cardMap, setCardMap] = useState({});
@@ -3385,22 +3381,22 @@ export default function App() {
     })();
   }, [cmdInput, companionInput, deckInput]);
 
-  const importMoxfieldUrl = useCallback(async (inputUrl, options = {}) => {
+  const importDeckUrl = useCallback(async (inputUrl, options = {}) => {
     const targetUrl = String(inputUrl || "").trim();
     if (!targetUrl || importInFlightRef.current === targetUrl) return;
     importInFlightRef.current = targetUrl;
     lastAutoImportRef.current = targetUrl;
     setLoading(true);
     setError(null);
-    setMoxfieldUrl(targetUrl);
+    setDeckUrl(targetUrl);
     try {
-      setProgress(options.auto ? "Importing Moxfield deck..." : "Fetching deck...");
+      setProgress(options.auto ? "Importing deck..." : "Fetching deck...");
 
-      const res = await fetch(`/api/import/moxfield?url=${encodeURIComponent(targetUrl)}`);
+      const res = await fetch(`/api/import/deck?url=${encodeURIComponent(targetUrl)}`);
       const data = await res.json();
       if (!res.ok || data.error) {
         const detail = data.details?.length ? ` ${data.details.join(" ")}` : "";
-        throw new Error(`${data.error || "Moxfield import failed."}${detail}`);
+        throw new Error(`${data.error || "Deck import failed."}${detail}`);
       }
 
       const importedCommanderInput = data.commanders?.length ? data.commanders.join(" + ") : cmdInput;
@@ -3426,17 +3422,17 @@ export default function App() {
     }
   }, [analyzeDeckValues, cmdInput, companionInput]);
 
-  const handleMoxfieldImport = useCallback(() => {
-    return importMoxfieldUrl(moxfieldUrl);
-  }, [importMoxfieldUrl, moxfieldUrl]);
+  const handleDeckImport = useCallback(() => {
+    return importDeckUrl(deckUrl);
+  }, [deckUrl, importDeckUrl]);
 
-  const handleMoxfieldPaste = useCallback((event) => {
-    const url = extractMoxfieldDeckUrl(event.clipboardData?.getData("text") || "");
+  const handleDeckPaste = useCallback((event) => {
+    const url = extractSupportedDeckUrl(event.clipboardData?.getData("text") || "");
     if (!url) return;
     event.preventDefault();
     lastAutoImportRef.current = url;
-    importMoxfieldUrl(url, { auto: true });
-  }, [importMoxfieldUrl]);
+    importDeckUrl(url, { auto: true });
+  }, [importDeckUrl]);
 
   const handleConstructionAction = useCallback((action) => {
     const current = constructionSessionRef.current;
@@ -3474,36 +3470,36 @@ export default function App() {
     try {
       if (!navigator.clipboard?.readText) throw new Error("Clipboard access is not available in this browser.");
       const clipboardText = await navigator.clipboard.readText();
-      const url = extractMoxfieldDeckUrl(clipboardText);
-      if (!url) throw new Error("The clipboard does not contain a valid Moxfield deck link.");
-      setMoxfieldUrl(url);
+      const url = extractSupportedDeckUrl(clipboardText);
+      if (!url) throw new Error("The clipboard does not contain a valid Moxfield or Archidekt deck link.");
+      setDeckUrl(url);
       lastAutoImportRef.current = url;
-      await importMoxfieldUrl(url, { auto: true });
+      await importDeckUrl(url, { auto: true });
     } catch (clipboardError) {
-      setError(clipboardError.message || "Clipboard access was blocked. Paste the Moxfield link into the field instead.");
+      setError(clipboardError.message || "Clipboard access was blocked. Paste the deck link into the field instead.");
     }
-  }, [importMoxfieldUrl]);
+  }, [importDeckUrl]);
 
   useEffect(() => {
-    const url = extractMoxfieldDeckUrl(moxfieldUrl);
-    if (!url || url !== moxfieldUrl.trim() || loading || lastAutoImportRef.current === url) return undefined;
+    const url = extractSupportedDeckUrl(deckUrl);
+    if (!url || url !== deckUrl.trim() || loading || lastAutoImportRef.current === url) return undefined;
     const timer = window.setTimeout(() => {
       lastAutoImportRef.current = url;
-      importMoxfieldUrl(url, { auto: true });
+      importDeckUrl(url, { auto: true });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [importMoxfieldUrl, loading, moxfieldUrl]);
+  }, [deckUrl, importDeckUrl, loading]);
 
   const inputProps = {
     error,
-    moxfieldUrl,
+    deckUrl,
     draftDeck: deckModel || draftDeck,
     loading,
     progress,
     onClipboardPaste: handleClipboardPaste,
-    onImport: handleMoxfieldImport,
-    onMoxfieldPaste: handleMoxfieldPaste,
-    setMoxfieldUrl,
+    onImport: handleDeckImport,
+    onDeckPaste: handleDeckPaste,
+    setDeckUrl,
   };
 
   if (!analysis || !deckModel) {

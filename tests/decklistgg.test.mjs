@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import {
   DECKLIST_GG_IMPORT_ENDPOINT,
   fetchDecklistGgDeck,
-  moxfieldDeckUrl,
   normalizeDecklistGgDeck,
 } from "../lib/decklistgg.mjs";
+import { moxfieldDeckUrl } from "../lib/deckSource.mjs";
 
 test("normalizes Decklist.gg response into app import payload", () => {
   const normalized = normalizeDecklistGgDeck({
@@ -61,6 +61,6 @@ test("posts deck URL to Decklist.gg import endpoint", async () => {
   assert.deepEqual(JSON.parse(calls[0].options.body), { url: "https://moxfield.com/decks/abc123" });
 });
 
-test("builds canonical Moxfield URL for Decklist.gg fallback", () => {
+test("builds canonical Moxfield URL for Decklist.gg import", () => {
   assert.equal(moxfieldDeckUrl("DlEhQF9KOU-8iXpfmXzitg"), "https://moxfield.com/decks/DlEhQF9KOU-8iXpfmXzitg");
 });

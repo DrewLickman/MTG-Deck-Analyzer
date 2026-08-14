@@ -127,6 +127,7 @@ Deck:
   assert.equal(mvThree.U, 7);
   assert.equal(mvThree.R, 2);
   assert.equal(mvThree.total, 17);
+  assert.deepEqual(analysis.structure.curveBands.map((band) => band.label), ["Setup", "Early", "Commander Turn", "Midgame", "Top End"]);
 });
 
 test("commanders appear in card scores and commander turn follows commander mana value", () => {

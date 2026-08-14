@@ -1663,7 +1663,7 @@ function DeckTierList({ analysis, cardMap, cutDecisions, onDecision, analysisRea
     <section className={panelClass("overflow-hidden")}>
       <div className="border-b border-neutral-800 p-4 sm:p-5">
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Tier List</div>
-        <div className="mt-1 text-sm text-neutral-400">{totalCards} cards grouped from strongest includes to first cuts. Cut filters below do not hide cards here.</div>
+        <div className="mt-1 text-sm text-neutral-400">{totalCards} cards grouped from first cuts to strongest includes. Cut filters below do not hide cards here.</div>
       </div>
       <div className="divide-y divide-neutral-800">
         {tierRows.map((row) => {
@@ -1677,7 +1677,7 @@ function DeckTierList({ analysis, cardMap, cutDecisions, onDecision, analysisRea
                   <div className="mt-1 font-mono text-xs opacity-80">{row.cards.length} card{row.cards.length === 1 ? "" : "s"}</div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-[1920px]:grid-cols-7">
                 {row.cards.length
                   ? row.cards.map((item) => (
                     <TierListCard key={item.name} item={item} analysisReady={analysisReady} onDecision={onDecision} />

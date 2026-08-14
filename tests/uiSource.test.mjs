@@ -328,7 +328,7 @@ test("cuts tab renders a deck-wide visual tier list", () => {
   assert.match(source, /decision === "cut"/);
   assert.match(source, /decision === "keep"/);
   assert.match(source, /Cut filters below do not hide cards here/);
-  assert.match(source, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5/);
+  assert.match(source, /grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-\[1920px\]:grid-cols-7/);
 });
 
 test("cut export uses visible required cuts first", () => {

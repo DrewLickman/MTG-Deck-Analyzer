@@ -79,6 +79,6 @@ test("typical card pools distribute across all tiers", () => {
     cutDecisions: {},
   });
 
-  assert.deepEqual(rows.map((row) => row.tier), ["S", "A", "B", "C", "D", "F"]);
+  assert.deepEqual(rows.map((row) => row.tier), ["F", "D", "C", "B", "A", "S"]);
   assert.ok(rows.every((row) => row.cards.length > 0));
 });

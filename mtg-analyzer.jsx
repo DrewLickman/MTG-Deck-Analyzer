@@ -2715,17 +2715,20 @@ function UpgradesTab({ analysis, analysisReady }) {
 
 function HandCard({ item }) {
   return (
-    <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+    <article data-opening-hand-card className="grid min-h-[88px] min-w-0 grid-cols-[64px_minmax(0,1fr)] overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 sm:flex sm:min-h-0 sm:flex-col">
       <PreviewableCardImage
         card={item.card}
         name={item.name}
-        className="aspect-[5/7] w-full object-cover"
-        fallbackClassName="flex aspect-[5/7] w-full items-center justify-center bg-neutral-900 p-3 text-center text-xs text-neutral-500"
+        className="h-full min-h-[88px] w-16 object-cover sm:aspect-[5/7] sm:h-auto sm:min-h-0 sm:w-full"
+        fallbackClassName="flex h-full min-h-[88px] w-16 items-center justify-center bg-neutral-900 p-2 text-center text-[10px] text-neutral-500 sm:aspect-[5/7] sm:h-auto sm:min-h-0 sm:w-full sm:p-3 sm:text-xs"
       />
-      <div className="flex flex-1 flex-col gap-2 p-2.5">
-        <div className="text-sm font-semibold leading-tight text-neutral-100">{item.name}</div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="line-clamp-2 text-sm font-semibold leading-tight text-neutral-100">{item.name}</div>
+          {!item.land && <div className="shrink-0 sm:hidden"><ManaCostDisplay card={item.card} /></div>}
+        </div>
         <div className="mt-auto flex flex-wrap gap-1">
-          {item.roles.slice(0, 3).map((role) => <RoleChip key={role} role={role} />)}
+          {item.roles.slice(0, 3).map((role, index) => <span key={role} className={index > 1 ? "hidden sm:inline" : "inline"}><RoleChip role={role} /></span>)}
         </div>
       </div>
     </article>
@@ -2941,7 +2944,7 @@ function LegacyMulliganTab({ analysis, deck, cardMap, coreCards }) {
 function MulliganResult({ selected, result, cardMap }) {
   if (!result) {
     return (
-      <section className={panelClass("p-8 text-center")}>
+      <section className={panelClass("p-5 text-center sm:p-8")}>
         <div className="text-lg font-semibold text-neutral-200">Ready for a first hand</div>
         <div className="mt-2 text-sm text-neutral-500">Draw a random seven or switch to Manual Hand to grade the cards you actually drew.</div>
       </section>
@@ -2950,13 +2953,13 @@ function MulliganResult({ selected, result, cardMap }) {
 
   return (
     <>
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <section className={panelClass("p-3 sm:p-5")}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">{selected.source} · Attempt {selected.id}</div>
-            <div className="mt-1 flex flex-wrap items-center gap-3"><h3 className="text-3xl font-bold text-neutral-50">{result.verdict.label}</h3><span className={`rounded-lg border px-3 py-1 font-mono text-lg font-bold ${statusClasses(result.verdict.status)}`}>{result.score}/100</span></div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 sm:gap-3"><h3 className="text-2xl font-bold text-neutral-50 sm:text-3xl">{result.verdict.label}</h3><span className={`rounded-lg border px-3 py-1 font-mono text-base font-bold sm:text-lg ${statusClasses(result.verdict.status)}`}>{result.score}/100</span></div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          <div aria-label="Opening hand metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Metric label="Sources" value={result.metrics.coloredSources} tone={result.metrics.coloredSources >= 2 && result.metrics.coloredSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} lands`} />
             <Metric label="Early" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
             <Metric label="Ramp" value={result.metrics.ramp} />
@@ -2965,8 +2968,12 @@ function MulliganResult({ selected, result, cardMap }) {
             <Metric label="Engine" value={result.metrics.engineAccess} />
           </div>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">{result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}</div>
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="mt-4 flex items-end justify-between gap-3 sm:mt-5">
+          <div><div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Your seven</div><div className="mt-0.5 text-xs text-neutral-600">Lands first, then spells by mana value</div></div>
+          <div className="shrink-0 font-mono text-xs text-neutral-500">7 cards</div>
+        </div>
+        <div aria-label="Opening hand cards" className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-7">{result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}</div>
+        <div className="mt-4 grid gap-3 sm:mt-5 lg:grid-cols-2 lg:gap-4">
           <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">What works</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.strengths.length ? result.strengths.map((item) => <div key={item}>• {item}</div>) : <div>No clear structural strength was detected.</div>}</div></div>
           <div className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-amber-300">Keep risk</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.concerns.length ? result.concerns.map((item) => <div key={item}>• {item}</div>) : <div>No major opening-hand weakness was detected.</div>}</div></div>
         </div>
@@ -3021,34 +3028,54 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
 
   return (
     <div className="space-y-5">
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section className={panelClass("p-3 sm:p-5")}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
-            <h3 className="mt-1 text-2xl font-bold text-neutral-50">Opening Hand Lab</h3>
-            <p className="mt-2 max-w-2xl text-sm text-neutral-400">Random Hands reshuffle the full main deck. Manual Hand grades the seven cards you selected.</p>
+            <h3 className="mt-1 text-xl font-bold text-neutral-50 sm:text-2xl">Opening Hand Lab</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Random Hands reshuffle the full main deck. Manual Hand grades the seven cards you selected.</p>
           </div>
-          <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
-            {[{ id: "random", label: "Random Hand" }, { id: "manual", label: "Manual Hand" }].map((option) => <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-10 rounded px-3 py-2 text-sm font-semibold ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>)}
+          <div className="grid w-full grid-cols-2 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:inline-grid sm:w-auto">
+            {[{ id: "random", label: "Random Hand" }, { id: "manual", label: "Manual Hand" }].map((option) => <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-11 rounded px-2 py-2 text-sm font-semibold sm:px-3 ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>)}
           </div>
         </div>
-        {mode === "random" && <button type="button" onClick={drawHand} className="mt-4 min-h-12 rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
-        {mode === "manual" && <div className="mt-4 text-sm text-neutral-400">Select exactly seven cards, then analyze that hand.</div>}
+        {mode === "random" && <button type="button" onClick={drawHand} className="mt-3 min-h-12 w-full rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400 sm:mt-4 sm:w-auto">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
+        {mode === "manual" && <div className="mt-3 text-sm leading-6 text-neutral-400 sm:mt-4">Select exactly seven cards, then analyze that hand.</div>}
       </section>
 
-      <MulliganResult selected={selected} result={result} cardMap={cardMap} />
-
       {mode === "manual" && (
-        <section className={panelClass("p-4 sm:p-5")}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Manual Hand</div><h3 className="mt-1 text-xl font-bold text-neutral-50">Select your seven</h3></div><span aria-live="polite" className={`shrink-0 rounded-lg border px-3 py-2 font-mono text-sm ${manualHand.length === 7 ? statusClasses("good") : "border-neutral-700 bg-neutral-950 text-neutral-300"}`}>{manualHand.length}/7 selected</span></div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-            <div><label htmlFor="opening-hand-search" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Find a card in your deck</label><input id="opening-hand-search" type="search" value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search by card name" className="mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" /><div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">{cardChoices.map((entry) => { const selectedCount = selectedCounts[normalizeName(entry.name)] || 0; const unavailable = manualHand.length >= 7 || selectedCount >= (Number(entry.qty) || 0); return <div key={entry.name} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"><div className="min-w-0"><CardPreview card={findCard(cardMap, entry.name)} name={entry.name} /><div className="mt-1 font-mono text-[11px] text-neutral-500">{selectedCount}/{entry.qty} selected</div></div><button type="button" disabled={unavailable} onClick={() => setManualHand((current) => addCardToOpeningHand(deck, current, entry.name))} className="min-h-9 shrink-0 rounded-lg border border-amber-700 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600">Add</button></div>; })}</div></div>
-            <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3"><div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Seven-slot hand</div><div aria-label={`${manualHand.length} of 7 selected hand slots`} className="mt-3 grid grid-cols-7 gap-1">{Array.from({ length: 7 }, (_, index) => { const entry = manualHand[index]; return <div key={entry ? `${entry.name}-${entry.copyIndex}` : `slot-${index}`} className={`aspect-[5/7] min-w-0 rounded border p-1 text-[9px] leading-tight ${entry ? "border-amber-700 bg-neutral-900 text-neutral-200" : "border-dashed border-neutral-700 bg-neutral-950 text-neutral-700"}`}>{entry ? <><div className="line-clamp-4">{entry.name}</div><button type="button" onClick={() => setManualHand((current) => removeCardFromOpeningHand(current, index))} className="mt-1 text-[9px] text-rose-300">Remove</button></> : null}</div>; })}</div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" disabled={manualHand.length === 0} onClick={() => setManualHand([])} className="min-h-11 rounded-lg border border-neutral-700 px-3 text-sm font-semibold text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-700">Clear</button><button type="button" disabled={manualHand.length !== 7} onClick={analyzeManualHand} className="min-h-11 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze hand</button></div></div>
+        <section className={panelClass("p-3 sm:p-5")}>
+          <div className="flex items-center justify-between gap-3"><div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Manual Hand</div><h3 className="mt-1 text-lg font-bold text-neutral-50 sm:text-xl">Select your seven</h3></div><span aria-live="polite" className={`shrink-0 rounded-lg border px-3 py-2 font-mono text-sm ${manualHand.length === 7 ? statusClasses("good") : "border-neutral-700 bg-neutral-950 text-neutral-300"}`}>{manualHand.length}/7 selected</span></div>
+          <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+            <div><label htmlFor="opening-hand-search" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Find a card in your deck</label><input id="opening-hand-search" type="search" value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search by card name" className="mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" /><div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">{cardChoices.map((entry) => { const selectedCount = selectedCounts[normalizeName(entry.name)] || 0; const unavailable = manualHand.length >= 7 || selectedCount >= (Number(entry.qty) || 0); return <div key={entry.name} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"><div className="min-w-0"><CardPreview card={findCard(cardMap, entry.name)} name={entry.name} /><div className="mt-1 font-mono text-[11px] text-neutral-500">{selectedCount}/{entry.qty} selected</div></div><button type="button" disabled={unavailable} onClick={() => setManualHand((current) => addCardToOpeningHand(deck, current, entry.name))} className="min-h-11 shrink-0 rounded-lg border border-amber-700 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600">Add</button></div>; })}</div></div>
+            <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2.5 sm:p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Seven-slot hand</div>
+              <div aria-label={`${manualHand.length} of 7 selected hand slots`} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-7 sm:gap-1">
+                {Array.from({ length: 7 }, (_, index) => {
+                  const entry = manualHand[index];
+                  return (
+                    <div key={entry ? `${entry.name}-${entry.copyIndex}` : `slot-${index}`} className={`flex min-h-12 min-w-0 items-center justify-between gap-3 rounded border px-3 py-2 text-xs leading-tight sm:block sm:aspect-[5/7] sm:min-h-0 sm:p-1 sm:text-[9px] ${entry ? "border-amber-700 bg-neutral-900 text-neutral-200" : "border-dashed border-neutral-700 bg-neutral-950 text-neutral-600"}`}>
+                      <div className="flex min-w-0 items-center gap-2 sm:block">
+                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-800 font-mono text-[10px] text-neutral-400 sm:mb-1 sm:h-auto sm:w-auto sm:justify-start sm:bg-transparent">{index + 1}</span>
+                        <span className="line-clamp-2 font-semibold sm:line-clamp-4 sm:font-normal">{entry?.name || "Empty slot"}</span>
+                      </div>
+                      {entry && <button type="button" onClick={() => setManualHand((current) => removeCardFromOpeningHand(current, index))} className="min-h-9 shrink-0 rounded px-2 text-xs font-semibold text-rose-300 hover:bg-neutral-800 sm:mt-1 sm:min-h-0 sm:p-0 sm:text-[9px]">Remove</button>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="button" disabled={manualHand.length === 0} onClick={() => setManualHand([])} className="min-h-11 rounded-lg border border-neutral-700 px-3 text-sm font-semibold text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-700">Clear selection</button>
+                <button type="button" disabled={manualHand.length !== 7} onClick={analyzeManualHand} className="min-h-11 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze hand</button>
+              </div>
+            </div>
           </div>
         </section>
       )}
 
-      {attempts.length > 1 && <section className={panelClass("p-4 sm:p-5")}><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div><div className="mt-3 flex flex-wrap gap-2">{attempts.map((attempt) => <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`rounded-lg border px-3 py-2 text-left text-sm ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}><span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span><span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span></button>)}</div></section>}
+      <MulliganResult selected={selected} result={result} cardMap={cardMap} />
+
+      {attempts.length > 1 && <section className={panelClass("p-3 sm:p-5")}><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div><div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">{attempts.map((attempt) => <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`w-full rounded-lg border px-3 py-2 text-left text-sm sm:w-auto ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}><span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span><span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span></button>)}</div></section>}
     </div>
   );
 }
@@ -3073,7 +3100,7 @@ function TabIcon({ tabId }) {
 }
 
 function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = false }) {
-  const sizeClass = mobile ? "min-h-12 min-w-0 justify-center px-1 py-2 text-xs" : vertical ? "min-h-9 w-full justify-start px-2.5 py-1.5 text-left text-[13px]" : "min-h-10 px-3 py-2 text-sm";
+  const sizeClass = mobile ? "min-h-12 min-w-0 flex-col justify-center gap-0.5 px-0.5 py-1 text-[10px] leading-none sm:flex-row sm:gap-1 sm:px-1 sm:py-2 sm:text-xs" : vertical ? "min-h-9 w-full justify-start px-2.5 py-1.5 text-left text-[13px]" : "min-h-10 px-3 py-2 text-sm";
   return (
     <button
       key={tab.id}
@@ -3082,7 +3109,7 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
       data-desktop-tab={vertical ? tab.id : undefined}
       aria-current={activeTab === tab.id ? "page" : undefined}
       onClick={() => setActiveTab(tab.id)}
-      className={`${sizeClass} inline-flex shrink-0 items-center ${vertical ? "gap-1.5" : "gap-2"} rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+      className={`${sizeClass} inline-flex shrink-0 items-center ${mobile ? "" : vertical ? "gap-1.5" : "gap-2"} rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
     >
       <TabIcon tabId={tab.id} />
       <span>{tab.label}</span>

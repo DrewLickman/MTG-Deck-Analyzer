@@ -82,12 +82,23 @@ test("Build explains commander math, keeps actions compact, and shows weak signa
 
 test("Mulligan presents exclusive random and manual modes without additive repair labels", () => {
   const activeMulligan = source.slice(source.lastIndexOf("function MulliganTab"), source.indexOf("function DebugTab", source.lastIndexOf("function MulliganTab")));
+  const handCard = source.slice(source.indexOf("function HandCard"), source.indexOf("function LegacyMulliganTab"));
+  const mulliganResult = source.slice(source.indexOf("function MulliganResult"), source.lastIndexOf("function MulliganTab"));
   assert.match(activeMulligan, /Random Hand/);
   assert.match(activeMulligan, /Manual Hand/);
   assert.match(activeMulligan, /mode === "random"/);
   assert.match(activeMulligan, /mode === "manual"/);
   assert.match(activeMulligan, /<MulliganResult selected=\{selected\} result=\{result\} cardMap=\{cardMap\} \/>/);
+  assert.ok(activeMulligan.indexOf('mode === "manual"') < activeMulligan.indexOf("<MulliganResult"));
   assert.match(activeMulligan, /Seven-slot hand/);
+  assert.match(activeMulligan, /grid w-full grid-cols-2/);
+  assert.match(activeMulligan, /grid grid-cols-1 gap-2 sm:grid-cols-7/);
+  assert.match(handCard, /grid-cols-\[64px_minmax\(0,1fr\)\]/);
+  assert.match(handCard, /sm:flex sm:min-h-0 sm:flex-col/);
+  assert.match(mulliganResult, /aria-label="Opening hand cards"/);
+  assert.match(mulliganResult, /grid grid-cols-1 gap-2 sm:grid-cols-3/);
+  assert.match(mulliganResult, /aria-label="Opening hand metrics"/);
+  assert.match(mulliganResult, /grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6/);
   assert.match(source, /What would improve this hand/);
   assert.match(source, /Result \{example\.resultingScore\}\/100/);
   assert.doesNotMatch(activeMulligan, /Glue categories/);
@@ -128,6 +139,7 @@ test("navigation groups jobs and avoids horizontal navigation scrollers", () => 
   assert.match(source, /grid-cols-4/);
   assert.match(source, /function MobileTabBar/);
   assert.match(source, /grid-cols-5/);
+  assert.match(source, /min-h-12 min-w-0 flex-col justify-center gap-0\.5 px-0\.5 py-1 text-\[10px\] leading-none/);
   assert.match(source, /More/);
   const navigation = source.slice(source.indexOf("function TabletTabNav"), source.indexOf("function CalculatingAnalysisPanel"));
   assert.doesNotMatch(navigation, /overflow-x-auto/);

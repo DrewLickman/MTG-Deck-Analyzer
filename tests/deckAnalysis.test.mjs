@@ -1099,8 +1099,10 @@ Deck:
   assert.equal(new Set(categories).size, categories.length);
   assert.ok(analysis.nextSteps.every((step) => step.id && step.title && step.summary && step.action && step.tab));
   assert.ok(analysis.nextSteps.every((step, index) => index === 0 || priority[analysis.nextSteps[index - 1].priority] <= priority[step.priority]));
-  assert.equal(analysis.nextSteps.find((step) => step.category === "mana")?.tab, "mana");
-  assert.match(analysis.nextSteps.find((step) => step.category === "mana")?.action || "", /^Add /);
+  const manaStep = analysis.nextSteps.find((step) => step.category === "mana");
+  assert.equal(manaStep?.tab, "mana");
+  assert.match(manaStep?.action || "", /^Add /);
+  assert.notEqual(manaStep?.title, (manaStep?.action || "").replace(/\.$/, ""));
 });
 
 test("Rakdos answer gaps omit counterspells", () => {

@@ -570,6 +570,18 @@ test("role detection covers clear positives and near misses", () => {
   }
 });
 
+test("direct mana sources count as ramp without treating conditional mana or lands as ramp", () => {
+  const arcaneSignet = card("Arcane Signet", { type_line: "Artifact", oracle_text: "{T}: Add one mana of any color in your commander's color identity." });
+  const boneMiser = card("Bone Miser", { type_line: "Creature", oracle_text: "Whenever you discard a land card, add {B}{B}." });
+  const otawara = card("Otawara, Soaring City", { type_line: "Legendary Land", oracle_text: "{T}: Add {U}." });
+
+  assert.equal(getRoles(arcaneSignet).ramp, true);
+  assert.equal(getRoles(arcaneSignet).manaFixing, true);
+  assert.equal(getRoles(boneMiser).ramp, false);
+  assert.equal(getRoles(otawara).ramp, false);
+  assert.match(getRoleEvidence(arcaneSignet).find((item) => item.role === "ramp").matchingRule, /direct-mana-production/);
+});
+
 test("card group summaries include Scryfall image URLs and missing-image fallback data", () => {
   const deck = parseDecklist(`
 Commander:
@@ -1152,4 +1164,38 @@ Sideboard:
   assert.ok(analysis.upgrades.length >= 2);
   assert.ok(analysis.upgrades.every((upgrade) => upgrade.reason.includes(`Replace ${upgrade.cut} because`)));
   assert.ok(analysis.upgrades.every((upgrade) => upgrade.benefit && !upgrade.reason.includes("Fills a measured need")));
+});
+
+test("upgrade suggestions never cut scarce ramp for a non-ramp replacement", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Test Commander
+
+Deck:
+36 Island
+1 Arcane Signet
+1 Seven Drop
+
+Considering:
+1 Bone Miser
+1 Otawara, Soaring City
+1 Better Rock
+`);
+  const cardMap = {
+    "Test Commander": card("Test Commander", { type_line: "Legendary Creature", oracle_text: "Whenever you discard a card, draw a card." }),
+    Island: makeBasicLandCard("Island"),
+    "Arcane Signet": card("Arcane Signet", { type_line: "Artifact", oracle_text: "{T}: Add one mana of any color in your commander's color identity." }),
+    "Seven Drop": card("Seven Drop", { cmc: 7, type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Bone Miser": card("Bone Miser", { type_line: "Creature", oracle_text: "Whenever you discard a land card, add {B}{B}." }),
+    "Otawara, Soaring City": card("Otawara, Soaring City", { type_line: "Legendary Land", oracle_text: "{T}: Add {U}." }),
+    "Better Rock": card("Better Rock", { type_line: "Artifact", oracle_text: "{T}: Add one mana of any color." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const signetCut = analysis.cutCandidates.find((candidate) => candidate.name === "Arcane Signet");
+  assert.equal(signetCut.confidence, "low");
+  assert.equal(analysis.upgrades.some((upgrade) => upgrade.cut === "Arcane Signet"), false);
+  assert.equal(analysis.consideringAnalysis.find((candidate) => candidate.name === "Bone Miser").benefit.includes("Adds ramp"), false);
+  assert.equal(analysis.consideringAnalysis.find((candidate) => candidate.name === "Otawara, Soaring City").benefit.includes("Adds ramp"), false);
+  assert.ok(analysis.upgrades.every((upgrade) => !upgrade.addRoles?.includes("ramp") || /ramp/.test(upgrade.benefit)));
 });

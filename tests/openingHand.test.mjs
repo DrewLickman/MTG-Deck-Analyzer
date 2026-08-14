@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "../lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, drawOpeningHand, removeCardFromOpeningHand } from "../lib/openingHand.mjs";
 
 function card(name, options = {}) {
   return {
@@ -50,6 +50,26 @@ test("manual opening-hand selection respects deck quantities and seven-card limi
   assert.equal(hand.length, 6);
   hand = addCardToOpeningHand(deck, hand, "Forest");
   assert.equal(hand.at(-1).copyIndex, 0);
+});
+
+test("London mulligans draw seven, bottom exact cards, and analyze final sizes", () => {
+  const cards = [
+    card("Forest", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("Island", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    ...Array.from({ length: 5 }, (_, index) => card(`Spell ${index + 1}`, { cmc: index + 1 })),
+  ];
+  const seven = cards.map((item) => ({ name: item.name }));
+  const six = bottomCardsForLondonMulligan(seven, [6], 1);
+  const five = bottomCardsForLondonMulligan(seven, [5, 6], 2);
+
+  assert.equal(six.length, 6);
+  assert.equal(five.length, 5);
+  assert.throws(() => bottomCardsForLondonMulligan(seven, [6], 2), /Choose exactly 2/);
+
+  const result = analyzeOpeningHand({ deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) }, hand: five, cardMap: mapOf(cards) });
+  assert.equal(result.metrics.handSize, 5);
+  assert.match(result.glueSummary, /5-card hand|already cohesive/);
+  assert.doesNotMatch(result.glueSummary, /exact seven/);
 });
 
 test("opening-hand analysis rewards balanced mana, early action, and card flow", () => {

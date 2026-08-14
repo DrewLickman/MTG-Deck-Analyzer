@@ -65,6 +65,9 @@ test("card list reports analyzed nonlands, groups filters, and hides broad cut s
   assert.match(source, /const shortlistLimit = Math\.max\(10/);
   assert.match(source, /function cardConclusion/);
   assert.match(source, /Remove core mark/);
+  assert.match(source, /Why these roles\?/);
+  assert.match(source, /Show 20 more/);
+  assert.match(source, /roleOverrides/);
   assert.doesNotMatch(source, /Dense Card Table/);
 });
 
@@ -77,6 +80,8 @@ test("Build explains commander math, keeps actions compact, and shows weak signa
   assert.match(source, /const belowTargetSignals/);
   assert.match(source, /Show covered signals/);
   assert.match(source, /title="Candidates"/);
+  assert.match(source, /defaultOpen=\{false\} filterable/);
+  assert.match(source, /Search \{title\}/);
   assert.doesNotMatch(source, /Move to…/);
 });
 
@@ -91,6 +96,10 @@ test("Mulligan presents exclusive random and manual modes without additive repai
   assert.match(activeMulligan, /<MulliganResult selected=\{selected\} result=\{result\} cardMap=\{cardMap\} \/>/);
   assert.ok(activeMulligan.indexOf('mode === "manual"') < activeMulligan.indexOf("<MulliganResult"));
   assert.match(activeMulligan, /Seven-slot hand/);
+  assert.match(activeMulligan, /London mulligan/);
+  assert.match(activeMulligan, /Mulligans taken/);
+  assert.match(activeMulligan, /Session trends/);
+  assert.match(activeMulligan, /bottomCardsForLondonMulligan/);
   assert.match(activeMulligan, /grid w-full grid-cols-2/);
   assert.match(activeMulligan, /grid grid-cols-1 gap-2 sm:grid-cols-7/);
   assert.match(handCard, /grid-cols-\[64px_minmax\(0,1fr\)\]/);
@@ -116,6 +125,7 @@ test("Cuts selects into one shared detail panel and keeps exports collapsed", ()
   assert.match(source, /input list="cut-shortlist"/);
   assert.match(source, /Object\.keys\(cutDecisions\)\.length > 0/);
   assert.match(source, /Export decisions/);
+  assert.match(source, /Apply \{acceptedCuts\.length\} accepted cut/);
   assert.doesNotMatch(source, /Cut filters below do not hide cards here/);
 });
 
@@ -127,6 +137,10 @@ test("Upgrades makes exact swaps primary and groups each candidate once", () => 
   assert.match(activeUpgrades, /const byName = new Map\(\)/);
   assert.doesNotMatch(activeUpgrades, /Add Plan/);
   assert.doesNotMatch(activeUpgrades, /Candidate Cards/);
+  assert.match(activeUpgrades, /cutDecisions/);
+  assert.doesNotMatch(source, /function LegacyCutsTab/);
+  assert.doesNotMatch(source, /function LegacyUpgradesTab/);
+  assert.doesNotMatch(source, /function LegacyMulliganTab/);
 });
 
 test("navigation groups jobs and avoids horizontal navigation scrollers", () => {

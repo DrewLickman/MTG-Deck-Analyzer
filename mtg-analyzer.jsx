@@ -9,7 +9,7 @@ import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, 
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { extractSupportedDeckUrl } from "./lib/deckSource.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
-import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TAB_GROUPS = [
@@ -1260,9 +1260,33 @@ function cardConclusion(score) {
   return "No stronger cut or identity signal is visible.";
 }
 
-function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir, analysisReady }) {
+function RoleEvidenceControls({ score, roleOverrides, onRoleOverride }) {
+  const [selectedRole, setSelectedRole] = useState("ramp");
+  const editableRoles = ROLE_FILTER_GROUPS.flatMap((group) => group.filters);
+  const activeRoles = (score.roles || []).filter((role) => editableRoles.some((item) => item.id === role));
+  const overrides = roleOverrides[normalizeName(score.name)] || {};
+  return (
+    <details className="mt-3 rounded border border-neutral-800 bg-neutral-900/60 p-3">
+      <summary className="cursor-pointer text-xs font-semibold text-neutral-300">Why these roles?</summary>
+      <div className="mt-3 space-y-2">
+        {(score.roleEvidence || []).length ? score.roleEvidence.map((item) => <div key={`${item.role}-${item.matchingRule}`} className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-400"><span className="font-semibold text-neutral-200">{ROLE_LABELS[item.role] || item.role}:</span> {item.reason}</div>) : <div className="text-xs text-neutral-500">No automatic role evidence is available.</div>}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {activeRoles.map((role) => <button key={role} type="button" onClick={(event) => { event.stopPropagation(); onRoleOverride(score.name, role, false); }} className="min-h-9 rounded border border-rose-900 px-2 text-xs font-semibold text-rose-200">Remove {ROLE_LABELS[role] || role}</button>)}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <select value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} onClick={(event) => event.stopPropagation()} className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-2 text-sm text-neutral-100">{editableRoles.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}</select>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onRoleOverride(score.name, selectedRole, true); }} className="min-h-10 rounded bg-amber-500 px-3 text-sm font-bold text-neutral-950">Add role</button>
+      </div>
+      {Object.keys(overrides).length > 0 && <button type="button" onClick={(event) => { event.stopPropagation(); onRoleOverride(score.name, null, null); }} className="mt-2 min-h-9 rounded border border-neutral-700 px-3 text-xs font-semibold text-neutral-300">Reset role corrections</button>}
+    </details>
+  );
+}
+
+function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleOverrides, onRoleOverride, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir, analysisReady }) {
   const [expanded, setExpanded] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [visibleCount, setVisibleCount] = useState(20);
   const coreSet = useMemo(() => new Set((coreCards || []).map(normalizeName)), [coreCards]);
   const expandedSet = useMemo(() => new Set(expanded), [expanded]);
   const shortlistLimit = Math.max(10, analysis.deckSizePlan?.cutsNeeded || 0);
@@ -1282,6 +1306,9 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
       return 0;
     });
   }, [analysis.scores, roleFilter, searchTerm, sortCol, sortDir]);
+  const visibleRows = rows.slice(0, visibleCount);
+
+  useEffect(() => setVisibleCount(20), [roleFilter, searchTerm, sortCol, sortDir]);
 
   const toggleSort = (column) => {
     if (sortCol === column) setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
@@ -1298,7 +1325,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
   return (
     <div className="space-y-3">
     <section className={panelClass("overflow-hidden")}>
-      <div className="grid gap-3 border-b border-neutral-800 p-3 sm:p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+      <div className="sticky top-0 z-20 grid gap-3 border-b border-neutral-800 bg-neutral-900/95 p-3 backdrop-blur sm:p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
         <div>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card List</div>
           <div className="mt-1 text-sm text-neutral-400">{analyzedNonLandCount} analyzed nonland cards. {rows.length} match the current filters.</div>
@@ -1314,7 +1341,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
             <option value="all">All roles</option>
             {ROLE_FILTER_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.filters.map((filter) => <option key={filter.id} value={filter.id}>{filter.label}</option>)}</optgroup>)}
           </select>
-          <button type="button" onClick={() => setExpanded(rows.map((row) => row.name))} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
+          <button type="button" onClick={() => setExpanded(visibleRows.map((row) => row.name))} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
             Expand
           </button>
           <button type="button" onClick={() => setExpanded([])} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
@@ -1324,7 +1351,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
       </div>
 
       <div className="divide-y divide-neutral-800 md:hidden">
-        {rows.map((score) => {
+        {visibleRows.map((score) => {
           const card = findCard(cardMap, score.name);
           const roles = score.roles?.length ? score.roles : getRoleKeys(card);
           const isExpanded = expandedSet.has(score.name);
@@ -1374,6 +1401,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                       <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
                       <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
                       <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
+                      <RoleEvidenceControls score={score} roleOverrides={roleOverrides} onRoleOverride={onRoleOverride} />
                     </div>
                   </div>
                 </div>
@@ -1401,7 +1429,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
             </tr>
           </thead>
           <tbody>
-            {rows.map((score) => {
+            {visibleRows.map((score) => {
               const card = findCard(cardMap, score.name);
               const roles = score.roles?.length ? score.roles : getRoleKeys(card);
               const isExpanded = expandedSet.has(score.name);
@@ -1462,6 +1490,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                           <div>
                             <div className="text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
                             <div className="mt-1 text-sm leading-6 text-neutral-300">{formatTextSymbols(getCardText(card)) || "No text available."}</div>
+                            <RoleEvidenceControls score={score} roleOverrides={roleOverrides} onRoleOverride={onRoleOverride} />
                           </div>
                         </div>
                       </td>
@@ -1473,6 +1502,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
           </tbody>
         </table>
       </div>
+      {visibleRows.length < rows.length && <div className="border-t border-neutral-800 p-3 text-center"><button type="button" onClick={() => setVisibleCount((count) => count + 20)} className="min-h-11 rounded-lg border border-amber-700 px-4 text-sm font-semibold text-amber-200">Show 20 more ({rows.length - visibleRows.length} remaining)</button></div>}
     </section>
     </div>
   );
@@ -1715,333 +1745,16 @@ function CompareCandidatePanel({ candidate, decision, onDecision, analysisReady 
   );
 }
 
-function LegacyCutsTab({ analysis, cardMap, analysisReady }) {
+function CutsTab({ analysis, cardMap, analysisReady, cutDecisions, setCutDecisions, onApplyCuts }) {
   const deckSizePlan = analysis.deckSizePlan || {};
   const requiredCuts = deckSizePlan.cutsNeeded || 0;
-  const [cutCount, setCutCount] = useState(requiredCuts || 3);
-  const [cutDecisions, setCutDecisions] = useState({});
-  const [excludedRoles, setExcludedRoles] = useState([]);
-  const [highConfidenceOnly, setHighConfidenceOnly] = useState(false);
-  const [compareA, setCompareA] = useState("");
-  const [compareB, setCompareB] = useState("");
-  const [exportCopyStatus, setExportCopyStatus] = useState("idle");
-  const candidates = analysis.cutCandidates || [];
-  const candidateKeys = useMemo(() => new Set(candidates.map((candidate) => normalizeName(candidate.name))), [candidates]);
-  const excludedSet = useMemo(() => new Set(excludedRoles), [excludedRoles]);
-  const filteredCandidates = useMemo(() => candidates.filter((candidate) => {
-    if (highConfidenceOnly && candidate.confidence !== "high") return false;
-    return !(candidate.roles || []).some((role) => excludedSet.has(role));
-  }), [candidates, excludedSet, highConfidenceOnly]);
-  const visibleCandidates = filteredCandidates.slice(0, cutCount);
-  const acceptedCuts = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "cut");
-  const keptCandidates = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "keep");
-  const acceptedCutKeys = new Set(acceptedCuts.map((candidate) => normalizeName(candidate.name)));
-  const keptCandidateKeys = new Set(keptCandidates.map((candidate) => normalizeName(candidate.name)));
-  const requiredExportCuts = requiredCuts > 0
-    ? [
-      ...acceptedCuts,
-      ...filteredCandidates
-        .filter((candidate) => !acceptedCutKeys.has(normalizeName(candidate.name)) && !keptCandidateKeys.has(normalizeName(candidate.name)))
-        .slice(0, Math.max(0, requiredCuts - acceptedCuts.length)),
-    ].slice(0, requiredCuts)
-    : acceptedCuts.length
-      ? acceptedCuts
-      : visibleCandidates;
-  const requiredExportKeys = new Set(requiredExportCuts.map((candidate) => normalizeName(candidate.name)));
-  const additionalCutIdeas = visibleCandidates.filter((candidate) => {
-    const key = normalizeName(candidate.name);
-    return !requiredExportKeys.has(key) && !keptCandidateKeys.has(key);
-  });
-  const autoFillCuts = requiredCuts > 0 ? requiredExportCuts.filter((candidate) => !acceptedCutKeys.has(normalizeName(candidate.name))) : [];
-  const acceptedCutCountForTarget = Math.min(acceptedCuts.length, requiredCuts || acceptedCuts.length);
-  const projectedTotal = Number.isFinite(deckSizePlan.totalCards) ? deckSizePlan.totalCards - acceptedCuts.length : null;
-  const projectedExportTotal = Number.isFinite(deckSizePlan.totalCards) ? deckSizePlan.totalCards - requiredExportCuts.length : null;
-  const projectedExportMeetsTarget = Number.isFinite(projectedExportTotal) && projectedExportTotal <= (deckSizePlan.targetTotal || 100);
-  const remainingManualCuts = Math.max(0, requiredCuts - acceptedCuts.length);
-  const compareLeft = candidates.find((candidate) => candidate.name === compareA);
-  const compareRight = candidates.find((candidate) => candidate.name === compareB);
-  const needs = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
-  const exportText = [
-    requiredCuts > 0 ? `Required cuts (${requiredCuts})` : "Cuts",
-    ...requiredExportCuts.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`),
-    ...(requiredCuts > 0 && additionalCutIdeas.length ? ["", "Additional cut ideas", ...additionalCutIdeas.map((candidate) => `- ${candidate.name}: ${candidate.replacementNeed}`)] : []),
-    ...(keptCandidates.length ? ["", "Do not cut", ...keptCandidates.map((candidate) => `- ${candidate.name}`)] : []),
-    "",
-    "Adds",
-    ...(analysis.upgrades || []).slice(0, cutCount).map((upgrade) => `- ${upgrade.add}`),
-    "",
-    "Maybe cuts",
-    ...filteredCandidates.slice(cutCount, cutCount + 5).map((candidate) => `- ${candidate.name} (${candidate.confidence})`),
-    "",
-    "Protected core cards",
-    ...(analysis.coreCards || []).map((name) => `- ${name}`),
-  ].join("\n");
-
-  useEffect(() => {
-    setCutCount(requiredCuts || 3);
-  }, [requiredCuts]);
-
-  useEffect(() => {
-    setExportCopyStatus("idle");
-  }, [exportText]);
-
-  useEffect(() => {
-    setCutDecisions((current) => Object.fromEntries(Object.entries(current).filter(([name]) => candidateKeys.has(name))));
-  }, [candidateKeys]);
-
-  const setCandidateDecision = (name, decision) => {
-    setCutDecisions((current) => {
-      const key = normalizeName(name);
-      const next = { ...current };
-      if (decision) next[key] = decision;
-      else delete next[key];
-      return next;
-    });
-  };
-
-  const acceptRecommendedCuts = () => {
-    setCutDecisions((current) => {
-      const next = { ...current };
-      for (const candidate of requiredExportCuts) {
-        next[normalizeName(candidate.name)] = "cut";
-      }
-      return next;
-    });
-  };
-
-  const clearCutReview = () => {
-    setCutDecisions({});
-  };
-
-  const copyExportText = async () => {
-    try {
-      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(exportText);
-      setExportCopyStatus("copied");
-    } catch {
-      setExportCopyStatus("error");
-    }
-  };
-
-  const toggleExcludedRole = (role) => {
-    setExcludedRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
-  };
-
-  return (
-    <div className="space-y-4">
-      {requiredCuts > 0 && (
-        <section className={panelClass("p-4 sm:p-5")}>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-rose-300">Deck Size</div>
-              <h2 className="mt-1 text-xl font-semibold text-neutral-50">Need {requiredCuts} cut{requiredCuts === 1 ? "" : "s"} to reach {deckSizePlan.targetTotal || 100}</h2>
-              <p className="mt-1 text-sm text-neutral-400">{deckSizePlan.message}</p>
-              <p className="mt-2 text-sm text-neutral-300">{acceptedCutCountForTarget}/{requiredCuts} accepted cuts selected. Projected total after accepted cuts: {projectedTotal ?? "-"}.</p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[360px]">
-              <Metric label="Total" value={deckSizePlan.totalCards ?? "-"} tone="warn" />
-              <Metric label="Allowed" value={deckSizePlan.allowedTotal ?? "-"} tone="neutral" />
-              <Metric label="Target" value={deckSizePlan.targetTotal ?? 100} tone="good" />
-            </div>
-          </div>
-        </section>
-      )}
-
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Finder</div>
-            <div className="mt-1 text-sm text-neutral-400">{filteredCandidates.length} cut candidates after filters{requiredCuts > 0 ? `; first ${requiredCuts} are marked as required cuts` : ""}</div>
-            <div className="mt-1 text-xs text-neutral-500">{acceptedCuts.length} marked cut, {keptCandidates.length} marked keep</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[requiredCuts, 1, 3, 10].filter((count, index, list) => count > 0 && list.indexOf(count) === index).map((count) => (
-              <button
-                key={count}
-                type="button"
-                onClick={() => setCutCount(count)}
-                className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${cutCount === count ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}
-              >
-                Need {count} cut{count === 1 ? "" : "s"}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setHighConfidenceOnly((current) => !current)}
-              className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${highConfidenceOnly ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-rose-500"}`}
-            >
-              High confidence
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {CUT_EXCLUDE_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => toggleExcludedRole(option.id)}
-              className={`min-h-9 rounded border px-3 py-1 text-xs ${excludedSet.has(option.id) ? "border-sky-500 bg-sky-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-sky-500"}`}
-            >
-              Exclude {option.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <DeckTierList
-        analysis={analysis}
-        cardMap={cardMap}
-        cutDecisions={cutDecisions}
-        onDecision={setCandidateDecision}
-        analysisReady={analysisReady}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-        <section className="space-y-3">
-          {visibleCandidates.length
-            ? visibleCandidates.map((candidate) => (
-              <CutCandidateCard
-                key={candidate.name}
-                candidate={candidate}
-                cardMap={cardMap}
-                analysisReady={analysisReady}
-                decision={cutDecisions[normalizeName(candidate.name)]}
-                onDecision={setCandidateDecision}
-              />
-            ))
-            : <div className={panelClass("p-4 text-sm text-neutral-500")}>No cut candidates match the current filters.</div>}
-        </section>
-
-        <aside className="space-y-4">
-          <section className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Review</div>
-            <div className="mt-3 grid gap-2 text-sm">
-              <div className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <span className="text-neutral-300">Accepted cuts</span>
-                <span className="font-mono text-rose-200">{acceptedCuts.length}</span>
-              </div>
-              <div className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <span className="text-neutral-300">Kept candidates</span>
-                <span className="font-mono text-emerald-200">{keptCandidates.length}</span>
-              </div>
-              {requiredCuts > 0 && (
-                <div className={`rounded border px-3 py-2 ${acceptedCuts.length >= requiredCuts ? "border-emerald-900 bg-emerald-950/30 text-emerald-200" : "border-amber-900 bg-amber-950/30 text-amber-100"}`}>
-                  {acceptedCuts.length >= requiredCuts
-                    ? "Required cut count is covered."
-                    : `${remainingManualCuts} more cut${remainingManualCuts === 1 ? "" : "s"} still need confirmation.`}
-                </div>
-              )}
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={acceptRecommendedCuts}
-                  disabled={!requiredExportCuts.length}
-                  className="min-h-9 rounded border border-rose-700 px-3 py-1 text-xs font-semibold text-rose-100 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
-                >
-                  Accept recommended cuts
-                </button>
-                <button
-                  type="button"
-                  onClick={clearCutReview}
-                  disabled={!Object.keys(cutDecisions).length}
-                  className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600"
-                >
-                  Clear review
-                </button>
-              </div>
-              {requiredCuts > 0 && (
-                <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                  <div className="text-xs uppercase tracking-wide text-neutral-500">Projected Export Total</div>
-                  <div className={`mt-1 font-mono text-lg ${projectedExportMeetsTarget ? "text-emerald-200" : "text-amber-200"}`}>{projectedExportTotal ?? "-"}</div>
-                  <div className="mt-1 text-xs text-neutral-500">Includes accepted cuts plus automatic fill.</div>
-                </div>
-              )}
-              {autoFillCuts.length > 0 && (
-                <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                  <div className="text-xs uppercase tracking-wide text-neutral-500">Auto-fill Cuts</div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {autoFillCuts.map((candidate) => <span key={candidate.name} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{candidate.name}</span>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Needs</div>
-            <div className="mt-3 space-y-2">
-              {needs.length
-                ? needs.map((item) => (
-                  <div key={item.key} className={`rounded border p-3 text-sm ${statusClasses(item.status)}`}>
-                    <div className="font-semibold">{item.label}</div>
-                    <div className="mt-1 text-neutral-300">{item.summary}</div>
-                  </div>
-                ))
-                : <div className="text-sm text-neutral-500">No low scorecard categories are currently active.</div>}
-            </div>
-          </section>
-
-          <section className={panelClass("p-4")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Compare Slots</div>
-            <div className="mt-3 grid gap-2">
-              <select value={compareA} onChange={(event) => setCompareA(event.target.value)} className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100">
-                <option value="">First card</option>
-                {candidates.map((candidate) => <option key={`a-${candidate.name}`} value={candidate.name}>{candidate.name}</option>)}
-              </select>
-              <select value={compareB} onChange={(event) => setCompareB(event.target.value)} className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-2 text-sm text-neutral-100">
-                <option value="">Second card</option>
-                {candidates.map((candidate) => <option key={`b-${candidate.name}`} value={candidate.name}>{candidate.name}</option>)}
-              </select>
-            </div>
-            {compareLeft && compareRight && (
-              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                {[compareLeft, compareRight].map((candidate) => (
-                  <CompareCandidatePanel
-                    key={candidate.name}
-                    candidate={candidate}
-                    decision={cutDecisions[normalizeName(candidate.name)]}
-                    onDecision={setCandidateDecision}
-                    analysisReady={analysisReady}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className={panelClass("p-4")}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-neutral-500">Export Changes</div>
-                <div className="mt-1 text-xs text-neutral-500">Copy this into Moxfield notes or your deckbuilding checklist.</div>
-              </div>
-              <button
-                type="button"
-                onClick={copyExportText}
-                className="min-h-9 shrink-0 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200"
-              >
-                {exportCopyStatus === "copied" ? "Copied" : "Copy change plan"}
-              </button>
-            </div>
-            {exportCopyStatus === "error" && <div className="mt-2 rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">Clipboard access was blocked. Select the text below to copy manually.</div>}
-            <textarea readOnly value={exportText} className="mt-3 min-h-64 w-full rounded border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs leading-5 text-neutral-300" />
-          </section>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function CutsTab({ analysis, cardMap, analysisReady }) {
-  const deckSizePlan = analysis.deckSizePlan || {};
-  const requiredCuts = deckSizePlan.cutsNeeded || 0;
-  const [cutDecisions, setCutDecisions] = useState({});
   const [showAll, setShowAll] = useState(false);
   const [highConfidenceOnly, setHighConfidenceOnly] = useState(false);
   const [selectedName, setSelectedName] = useState("");
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");
   const [exportCopyStatus, setExportCopyStatus] = useState("idle");
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const candidates = analysis.cutCandidates || [];
   const candidateKeys = useMemo(() => new Set(candidates.map((candidate) => normalizeName(candidate.name))), [candidates]);
   const filteredCandidates = useMemo(
@@ -2093,6 +1806,11 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
     });
   };
 
+  const selectCandidate = (name) => {
+    setSelectedName(name);
+    setMobileDetailsOpen(true);
+  };
+
   const copyExportText = async () => {
     try {
       if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
@@ -2119,7 +1837,7 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
         </div>
       </section>
 
-      <DeckTierList analysis={analysis} cardMap={cardMap} cutDecisions={cutDecisions} onSelect={setSelectedName} analysisReady={analysisReady} candidateNames={visibleCandidateNames} />
+      <DeckTierList analysis={analysis} cardMap={cardMap} cutDecisions={cutDecisions} onSelect={selectCandidate} analysisReady={analysisReady} candidateNames={visibleCandidateNames} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         {false && <section className={panelClass("p-4 sm:p-5")}>
@@ -2146,9 +1864,10 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
           </div>
         </section>}
 
-        <aside className="space-y-4">
+        {mobileDetailsOpen && <button type="button" aria-label="Close cut details" onClick={() => setMobileDetailsOpen(false)} className="fixed inset-0 z-30 bg-black/60 xl:hidden" />}
+        <aside aria-label="Cut suggestion details" className={`${mobileDetailsOpen ? "fixed inset-x-3 bottom-20 z-40 block max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-950 p-1 shadow-2xl" : "hidden"} space-y-4 xl:static xl:block xl:max-h-none xl:overflow-visible xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none`}>
           <section className={panelClass("p-4 sm:p-5")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggestion Details</div>
+            <div className="flex items-center justify-between gap-3"><div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggestion Details</div><button type="button" onClick={() => setMobileDetailsOpen(false)} className="min-h-9 rounded border border-neutral-700 px-3 text-xs font-semibold text-neutral-300 xl:hidden">Close</button></div>
             {selectedCandidate ? (() => {
               const decision = cutDecisions[normalizeName(selectedCandidate.name)];
               const card = findCard(cardMap, selectedCandidate.name);
@@ -2198,6 +1917,7 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
               <textarea readOnly value={exportText} className="mt-3 min-h-40 w-full rounded border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs text-neutral-300" />
             </details>
           )}
+          {acceptedCuts.length > 0 && <button type="button" onClick={() => onApplyCuts(acceptedCuts.map((candidate) => candidate.name))} className="min-h-11 w-full rounded-lg bg-rose-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-rose-400">Apply {acceptedCuts.length} accepted cut{acceptedCuts.length === 1 ? "" : "s"} to Build</button>}
         </aside>
       </div>
     </div>
@@ -2249,13 +1969,24 @@ const CONSTRUCTION_ZONE_OPTIONS = [
   { id: "setAside", label: "Set Aside" },
 ];
 
-function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, tone = "neutral", onMoveStack, draggedStack, activeDropZone, onDragStart, onDragEnd, setActiveDropZone }) {
+function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, tone = "neutral", defaultOpen = true, filterable = false, onMoveStack, draggedStack, activeDropZone, onDragStart, onDragEnd, setActiveDropZone }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
   const toneClass = tone === "main"
     ? "border-emerald-900/80"
     : tone === "aside"
       ? "border-rose-900/80"
       : "border-amber-900/80";
   const isActiveDropTarget = activeDropZone === zone;
+  const filteredEntries = useMemo(() => {
+    const query = normalizeName(search);
+    return entries.filter((entry) => {
+      if (query && !normalizeName(entry.name).includes(query)) return false;
+      if (roleFilter === "all") return true;
+      return getRoleKeys(findCard(cardMap, entry.name)).includes(roleFilter);
+    });
+  }, [cardMap, entries, roleFilter, search]);
   const dropClass = isActiveDropTarget
     ? tone === "main"
       ? "border-emerald-400 ring-2 ring-emerald-500/60"
@@ -2284,12 +2015,23 @@ function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, ton
       }}
       onDrop={handleDrop}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2.5">
-        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-300">{title}</div>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 border-b border-neutral-800 px-3 py-2.5 text-left">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-300"><span aria-hidden="true">{open ? "−" : "+"}</span>{title}</div>
         <span className="rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 font-mono text-xs text-neutral-300">{count}</span>
-      </div>
-      <div className="max-h-60 space-y-1 overflow-y-auto p-2">
-        {entries.length ? entries.map((entry) => (
+      </button>
+      {open && filterable && (
+        <div className="grid gap-2 border-b border-neutral-800 p-2 sm:grid-cols-[minmax(0,1fr)_160px]">
+          <label className="sr-only" htmlFor={`${zone}-construction-search`}>Search {title}</label>
+          <input id={`${zone}-construction-search`} type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${title.toLowerCase()}`} className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" />
+          <label className="sr-only" htmlFor={`${zone}-construction-role`}>Filter {title} by role</label>
+          <select id={`${zone}-construction-role`} value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="min-h-10 rounded border border-neutral-700 bg-neutral-950 px-2 text-sm text-neutral-200 outline-none focus:border-amber-500">
+            <option value="all">All roles</option>
+            {Object.entries(ROLE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </div>
+      )}
+      {open && <div className="max-h-60 space-y-1 overflow-y-auto p-2">
+        {filteredEntries.length ? filteredEntries.map((entry) => (
           <div
             key={normalizeName(entry.name)}
             draggable
@@ -2315,8 +2057,8 @@ function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, ton
               </details>
             </div>
           </div>
-        )) : <div className="p-3 text-sm text-neutral-500">{emptyText}</div>}
-      </div>
+        )) : <div className="p-3 text-sm text-neutral-500">{entries.length ? "No cards match these filters." : emptyText}</div>}
+      </div>}
     </section>
   );
 }
@@ -2521,144 +2263,15 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
       </section>
 
       <div className="grid gap-3 xl:grid-cols-3">
-        <ConstructionZone zone="main" title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
-        <ConstructionZone zone="pool" title="Candidates" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No sideboard candidates remain." onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
-        <ConstructionZone zone="setAside" title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="main" title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" defaultOpen={false} filterable onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="pool" title="Candidates" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No sideboard candidates remain." filterable onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="setAside" title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" filterable onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
       </div>
     </div>
   );
 }
 
-function LegacyUpgradesTab({ analysis, analysisReady }) {
-  const roadmap = analysis.roadmap || {};
-  const candidateAdds = [...analysis.sideboardAnalysis, ...analysis.consideringAnalysis];
-  const recommendedAdds = candidateAdds.filter((candidate) => candidate.recommendation === "add");
-  const maybeAdds = candidateAdds.filter((candidate) => candidate.recommendation === "maybe");
-  const [addPlanCopyStatus, setAddPlanCopyStatus] = useState("idle");
-  const addPlanText = [
-    "Add priorities",
-    ...((roadmap.steps || []).slice(0, 5).map((step) => `- ${step.label}: ${step.action}`)),
-    "",
-    "Suggested swaps",
-    ...((roadmap.upgradePairs || analysis.upgrades || []).slice(0, 5).map((upgrade) => `- Add ${upgrade.add}${upgrade.cut ? ` over ${upgrade.cut}` : ""}`)),
-    "",
-    "Candidate adds",
-    ...recommendedAdds.map((candidate) => `- ${candidate.name}: ${candidate.reason}`),
-    "",
-    "Maybe adds",
-    ...maybeAdds.slice(0, 5).map((candidate) => `- ${candidate.name}: ${candidate.reason}`),
-  ].join("\n");
-
-  useEffect(() => {
-    setAddPlanCopyStatus("idle");
-  }, [addPlanText]);
-
-  const copyAddPlan = async () => {
-    try {
-      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(addPlanText);
-      setAddPlanCopyStatus("copied");
-    } catch {
-      setAddPlanCopyStatus("error");
-    }
-  };
-
-  return (
-    <div className="grid gap-3 sm:gap-4 xl:grid-cols-2">
-      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Add Plan</div>
-            <div className="mt-1 text-sm text-neutral-300">{roadmap.headline || "Use the current roadmap and candidate pool to decide what to add next."}</div>
-          </div>
-          <button
-            type="button"
-            onClick={copyAddPlan}
-            className="min-h-9 w-fit rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200"
-          >
-            {addPlanCopyStatus === "copied" ? "Copied" : "Copy add plan"}
-          </button>
-        </div>
-        {addPlanCopyStatus === "error" && <div className="mt-3 rounded border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">Clipboard access was blocked. Use the add plan text below as the source of truth.</div>}
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-          <div className="space-y-2">
-            {(roadmap.steps || []).slice(0, 4).map((step, index) => (
-              <div key={`${step.label}-${index}`} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <div className="text-xs uppercase tracking-wide text-neutral-500">Priority {index + 1}</div>
-                <div className="mt-1 text-sm font-semibold text-neutral-100">{step.label}</div>
-                <div className="mt-1 text-sm text-neutral-300">{step.action}</div>
-              </div>
-            ))}
-            {!(roadmap.steps || []).length && <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No add priorities are active yet.</div>}
-          </div>
-          <div className="grid gap-3">
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggested Adds</div>
-              <div className="mt-2 space-y-2">
-                {(roadmap.upgradePairs || []).length
-                  ? roadmap.upgradePairs.slice(0, 3).map((upgrade) => (
-                    <div key={`${upgrade.cut}-${upgrade.add}`} className="text-sm">
-                      <div className="font-semibold text-emerald-200">{upgrade.add}</div>
-                      <div className="text-xs text-neutral-500">{upgrade.cut ? `Use over ${upgrade.cut}` : upgrade.reason}</div>
-                    </div>
-                  ))
-                  : <div className="text-sm text-neutral-500">No specific add pairings yet.</div>}
-              </div>
-            </div>
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Candidate Pool</div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {recommendedAdds.length
-                  ? recommendedAdds.slice(0, 8).map((candidate) => <span key={candidate.name} className="rounded border border-emerald-800 px-2 py-0.5 text-xs text-emerald-200">{candidate.name}</span>)
-                  : <span className="text-sm text-neutral-500">No add-ready sideboard or considering cards.</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended Swaps</div>
-        <div className="mt-3 space-y-3">
-          {analysis.upgrades.map((upgrade) => (
-            <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                  <div>
-                    <div className="text-xs text-neutral-500">Cut</div>
-                    <div className="font-semibold text-rose-200">{upgrade.cut}</div>
-                    <div className={`text-xs font-mono ${analysisReady ? scoreColor(upgrade.cutScore) : "text-neutral-400"}`}>{analysisReady ? `${upgrade.cutScore > 0 ? "+" : ""}${upgrade.cutScore}` : "Calculating..."}</div>
-                  </div>
-                <div className="text-neutral-600">to</div>
-                <div>
-                  <div className="text-xs text-neutral-500">Add</div>
-                  <div className="font-semibold text-emerald-200">{upgrade.add}</div>
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-neutral-400">{upgrade.reason}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Candidate Cards</div>
-        <div className="mt-3 space-y-3">
-          {[...analysis.sideboardAnalysis, ...analysis.consideringAnalysis].length === 0 && <div className="text-sm text-neutral-500">No sideboard or considering cards provided.</div>}
-          {[...analysis.sideboardAnalysis, ...analysis.consideringAnalysis].map((candidate) => (
-            <div key={candidate.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="font-semibold text-neutral-100">{candidate.name}</div>
-                <span className="rounded border border-neutral-700 px-2 py-0.5 text-xs uppercase text-neutral-300">{candidate.recommendation}</span>
-              </div>
-              <p className="mt-2 text-sm text-neutral-400">{candidate.reason}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function UpgradesTab({ analysis, analysisReady }) {
+function UpgradesTab({ analysis, analysisReady, cutDecisions }) {
   const candidateAdds = useMemo(() => {
     const byName = new Map();
     for (const candidate of [...(analysis.sideboardAnalysis || []), ...(analysis.consideringAnalysis || [])]) {
@@ -2673,14 +2286,17 @@ function UpgradesTab({ analysis, analysisReady }) {
     label: recommendation === "add" ? "Add" : recommendation === "maybe" ? "Maybe" : "Skip",
     cards: candidateAdds.filter((candidate) => candidate.recommendation === recommendation),
   }));
+  const visibleUpgrades = useMemo(() => [...(analysis.upgrades || [])]
+    .filter((upgrade) => cutDecisions[normalizeName(upgrade.cut)] !== "keep")
+    .sort((left, right) => Number(cutDecisions[normalizeName(right.cut)] === "cut") - Number(cutDecisions[normalizeName(left.cut)] === "cut")), [analysis.upgrades, cutDecisions]);
 
   return (
     <div className="space-y-3 sm:space-y-4">
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended Swaps</div>
         <div className="mt-3 space-y-3">
-          {(analysis.upgrades || []).length
-            ? analysis.upgrades.map((upgrade) => (
+          {visibleUpgrades.length
+            ? visibleUpgrades.map((upgrade) => (
               <article key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                   <div><div className="text-xs text-neutral-500">Cut</div><div className="font-semibold text-rose-200">{upgrade.cut}</div><div className={`text-xs font-mono ${analysisReady ? scoreColor(upgrade.cutScore) : "text-neutral-400"}`}>{analysisReady ? `${upgrade.cutScore > 0 ? "+" : ""}${upgrade.cutScore}` : "Calculating..."}</div></div>
@@ -2735,212 +2351,6 @@ function HandCard({ item }) {
   );
 }
 
-function LegacyMulliganTab({ analysis, deck, cardMap, coreCards }) {
-  const [attempts, setAttempts] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [manualHand, setManualHand] = useState([]);
-  const [cardSearch, setCardSearch] = useState("");
-  const attemptNumber = useRef(0);
-
-  const recordHand = (hand, source) => {
-    const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
-    attemptNumber.current += 1;
-    const attempt = { id: attemptNumber.current, hand, result, source };
-    setAttempts((current) => [attempt, ...current].slice(0, 8));
-    setSelectedId(attempt.id);
-  };
-
-  const drawHand = () => recordHand(drawOpeningHand(deck), "Random draw");
-  const analyzeManualHand = () => {
-    if (manualHand.length !== 7) return;
-    recordHand(manualHand, "Selected hand");
-  };
-
-  const selectedCounts = useMemo(() => manualHand.reduce((counts, entry) => {
-    const key = normalizeName(entry.name);
-    counts[key] = (counts[key] || 0) + 1;
-    return counts;
-  }, {}), [manualHand]);
-  const cardChoices = useMemo(() => {
-    const query = normalizeName(cardSearch);
-    return [...(deck.main || [])]
-      .filter((entry) => !query || normalizeName(entry.name).includes(query))
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .slice(0, 12);
-  }, [cardSearch, deck.main]);
-
-  const selected = attempts.find((attempt) => attempt.id === selectedId) || attempts[0];
-  const result = selected?.result;
-
-  return (
-    <div className="space-y-5">
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
-            <h3 className="mt-1 text-2xl font-bold text-neutral-50">Opening Hand Lab</h3>
-            <p className="mt-2 max-w-2xl text-sm text-neutral-400">Every attempt reshuffles the complete main deck and draws a fresh seven. Previous attempts never remove cards from the next mulligan.</p>
-          </div>
-          <button type="button" onClick={drawHand} className="min-h-12 rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400">
-            {attempts.length ? "Draw fresh seven" : "Draw opening hand"}
-          </button>
-        </div>
-      </section>
-
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Use the cards you actually drew</div>
-            <h3 className="mt-1 text-xl font-bold text-neutral-50">Select your opening hand</h3>
-            <p className="mt-2 text-sm text-neutral-400">Choose exactly seven cards from this deck. Available copies follow the quantities in the imported decklist.</p>
-          </div>
-          <span aria-live="polite" className={`shrink-0 rounded-lg border px-3 py-2 font-mono text-sm ${manualHand.length === 7 ? statusClasses("good") : "border-neutral-700 bg-neutral-950 text-neutral-300"}`}>{manualHand.length}/7 selected</span>
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-          <div>
-            <label htmlFor="opening-hand-search" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Find a card in your deck</label>
-            <input
-              id="opening-hand-search"
-              type="search"
-              value={cardSearch}
-              onChange={(event) => setCardSearch(event.target.value)}
-              placeholder="Search by card name"
-              className="mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
-            />
-            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
-              {cardChoices.map((entry) => {
-                const selectedCount = selectedCounts[normalizeName(entry.name)] || 0;
-                const quantity = Math.max(0, Number(entry.qty) || 0);
-                const unavailable = manualHand.length >= 7 || selectedCount >= quantity;
-                return (
-                  <div key={entry.name} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-                    <div className="min-w-0">
-                      <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
-                      <div className="mt-1 font-mono text-[11px] text-neutral-500">{selectedCount}/{quantity} selected</div>
-                    </div>
-                    <button type="button" disabled={unavailable} onClick={() => setManualHand((current) => addCardToOpeningHand(deck, current, entry.name))} className="min-h-9 shrink-0 rounded-lg border border-amber-700 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600">
-                      Add
-                    </button>
-                  </div>
-                );
-              })}
-              {cardChoices.length === 0 && <div className="rounded-lg border border-dashed border-neutral-800 p-5 text-center text-sm text-neutral-500">No cards in this deck match that search.</div>}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Your seven</div>
-            <div className="mt-3 space-y-2">
-              {manualHand.map((entry, index) => (
-                <div key={`${entry.name}-${entry.copyIndex}`} className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-2">
-                  <CardPreview card={findCard(cardMap, entry.name)} name={entry.name} />
-                  <button type="button" onClick={() => setManualHand((current) => removeCardFromOpeningHand(current, index))} className="rounded px-2 py-1 text-xs font-semibold text-neutral-400 hover:bg-neutral-800 hover:text-red-300" aria-label={`Remove ${entry.name} from opening hand`}>Remove</button>
-                </div>
-              ))}
-              {Array.from({ length: Math.max(0, 7 - manualHand.length) }, (_, index) => <div key={`empty-${index}`} className="flex min-h-10 items-center rounded-lg border border-dashed border-neutral-800 px-3 text-xs text-neutral-600">Empty card slot</div>)}
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" disabled={manualHand.length === 0} onClick={() => setManualHand([])} className="min-h-11 rounded-lg border border-neutral-700 px-3 text-sm font-semibold text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-700">Clear</button>
-              <button type="button" disabled={manualHand.length !== 7} onClick={analyzeManualHand} className="min-h-11 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze selected hand</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {!result ? (
-        <section className={panelClass("p-8 text-center")}>
-          <div className="text-lg font-semibold text-neutral-200">Ready for a first hand</div>
-          <div className="mt-2 text-sm text-neutral-500">Draw a random seven or select the cards you actually drew to grade the hand and find what would best hold it together.</div>
-        </section>
-      ) : (
-        <>
-          <section className={panelClass("p-4 sm:p-5")}>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-neutral-500">{selected.source} · Attempt {selected.id}</div>
-                <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <h3 className="text-3xl font-bold text-neutral-50">{result.verdict.label}</h3>
-                  <span className={`rounded-lg border px-3 py-1 font-mono text-lg font-bold ${statusClasses(result.verdict.status)}`}>{result.score}/100</span>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                <Metric label="Colored sources" value={result.metrics.coloredSources} tone={result.metrics.coloredSources >= 2 && result.metrics.coloredSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} total lands`} />
-                <Metric label="Early plays" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
-                <Metric label="Ramp" value={result.metrics.ramp} />
-                <Metric label="Card flow" value={result.metrics.cardFlow} />
-                <Metric label="Interaction" value={result.metrics.interaction} />
-                <Metric label="Engine" value={result.metrics.engineAccess} />
-              </div>
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-              {result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}
-            </div>
-
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">What works</div>
-                <div className="mt-3 space-y-2 text-sm text-neutral-300">
-                  {result.strengths.length ? result.strengths.map((item) => <div key={item}>• {item}</div>) : <div>No clear structural strength was detected.</div>}
-                </div>
-              </div>
-              <div className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-amber-300">Keep risk</div>
-                <div className="mt-3 space-y-2 text-sm text-neutral-300">
-                  {result.concerns.length ? result.concerns.map((item) => <div key={item}>• {item}</div>) : <div>No major opening-hand weakness was detected.</div>}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className={panelClass("p-4 sm:p-5")}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">What this hand is missing</div>
-            <h3 className="mt-1 text-xl font-bold text-neutral-50">Glue categories</h3>
-            <p className="mt-2 text-sm text-neutral-400">{result.glueSummary}</p>
-            {result.glueNeeds.length > 0 && (
-              <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                {result.glueNeeds.map((need) => (
-                  <article key={need.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="font-semibold text-neutral-100">{need.label}</div>
-                      <span className="rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 font-mono text-xs text-emerald-300">up to +{need.improvement}</span>
-                    </div>
-                    <div className="mt-2 text-sm text-neutral-300">{need.detail}</div>
-                    <div className="mt-4 text-[11px] uppercase tracking-wide text-neutral-500">Examples from this deck</div>
-                    <div className="mt-2 space-y-2">
-                      {need.examples.map((example) => (
-                        <div key={example.name} className="flex items-center justify-between gap-3 rounded border border-neutral-800 bg-neutral-900/60 px-2.5 py-2">
-                          <CardPreview card={findCard(cardMap, example.name)} name={example.name} />
-                          <span className="shrink-0 font-mono text-xs text-emerald-300">+{example.improvement}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
-
-      {attempts.length > 1 && (
-        <section className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {attempts.map((attempt) => (
-              <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`rounded-lg border px-3 py-2 text-left text-sm ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}>
-                <span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span>
-                <span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
 function MulliganResult({ selected, result, cardMap }) {
   if (!result) {
     return (
@@ -2969,8 +2379,8 @@ function MulliganResult({ selected, result, cardMap }) {
           </div>
         </div>
         <div className="mt-4 flex items-end justify-between gap-3 sm:mt-5">
-          <div><div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Your seven</div><div className="mt-0.5 text-xs text-neutral-600">Lands first, then spells by mana value</div></div>
-          <div className="shrink-0 font-mono text-xs text-neutral-500">7 cards</div>
+          <div><div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Your final hand</div><div className="mt-0.5 text-xs text-neutral-600">Lands first, then spells by mana value</div></div>
+          <div className="shrink-0 font-mono text-xs text-neutral-500">{result.cards.length} cards{selected.mulliganCount ? ` · ${selected.mulliganCount} mulligan${selected.mulliganCount === 1 ? "" : "s"}` : ""}</div>
         </div>
         <div aria-label="Opening hand cards" className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-7">{result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}</div>
         <div className="mt-4 grid gap-3 sm:mt-5 lg:grid-cols-2 lg:gap-4">
@@ -3001,23 +2411,42 @@ function MulliganResult({ selected, result, cardMap }) {
   );
 }
 
-function MulliganTab({ analysis, deck, cardMap, coreCards }) {
+function MulliganTab({ analysis, deck, cardMap, coreCards, mulliganSession, setMulliganSession }) {
   const [mode, setMode] = useState("random");
-  const [attempts, setAttempts] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
   const [manualHand, setManualHand] = useState([]);
   const [cardSearch, setCardSearch] = useState("");
-  const attemptNumber = useRef(0);
+  const [mulliganCount, setMulliganCount] = useState(0);
+  const [pendingHand, setPendingHand] = useState(null);
+  const [pendingSource, setPendingSource] = useState("");
+  const [bottomIndexes, setBottomIndexes] = useState([]);
+  const attempts = mulliganSession.attempts;
+  const selectedId = mulliganSession.selectedId;
+  const setSelectedId = (id) => setMulliganSession((current) => ({ ...current, selectedId: id }));
 
-  const recordHand = (hand, source) => {
+  const recordHand = (hand, source, metadata = {}) => {
     const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
-    attemptNumber.current += 1;
-    const attempt = { id: attemptNumber.current, hand, result, source };
-    setAttempts((current) => [attempt, ...current].slice(0, 8));
-    setSelectedId(attempt.id);
+    setMulliganSession((current) => {
+      const attempt = { id: current.nextId, hand, result, source, ...metadata };
+      return { attempts: [attempt, ...current.attempts].slice(0, 20), selectedId: attempt.id, nextId: current.nextId + 1 };
+    });
+    setPendingHand(null);
+    setBottomIndexes([]);
   };
-  const drawHand = () => recordHand(drawOpeningHand(deck), "Random hand");
-  const analyzeManualHand = () => manualHand.length === 7 && recordHand(manualHand, "Manual hand");
+  const prepareHand = (hand, source) => {
+    if (mulliganCount === 0) recordHand(hand, source, { mulliganCount: 0, bottomed: [] });
+    else {
+      setPendingHand(hand);
+      setPendingSource(source);
+      setBottomIndexes([]);
+    }
+  };
+  const drawHand = () => prepareHand(drawOpeningHand(deck), "Random hand");
+  const analyzeManualHand = () => manualHand.length === 7 && prepareHand(manualHand, "Manual hand");
+  const confirmBottom = () => {
+    const hand = bottomCardsForLondonMulligan(pendingHand, bottomIndexes, mulliganCount);
+    const bottomed = bottomIndexes.map((index) => pendingHand[index].name);
+    recordHand(hand, pendingSource, { mulliganCount, bottomed });
+  };
   const selectedCounts = useMemo(() => manualHand.reduce((counts, entry) => ({ ...counts, [normalizeName(entry.name)]: (counts[normalizeName(entry.name)] || 0) + 1 }), {}), [manualHand]);
   const cardChoices = useMemo(() => {
     const query = normalizeName(cardSearch);
@@ -3025,6 +2454,17 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
   }, [cardSearch, deck.main]);
   const selected = attempts.find((attempt) => attempt.id === selectedId) || attempts[0];
   const result = selected?.result;
+  const sessionStats = useMemo(() => {
+    if (attempts.length < 2) return null;
+    const kept = attempts.filter((attempt) => attempt.result.verdict.label !== "Mulligan").length;
+    const needs = new Map();
+    for (const attempt of attempts) for (const need of attempt.result.glueNeeds || []) needs.set(need.label, (needs.get(need.label) || 0) + 1);
+    return {
+      keepRate: Math.round(kept / attempts.length * 100),
+      averageScore: Math.round(attempts.reduce((sum, attempt) => sum + attempt.result.score, 0) / attempts.length),
+      recurringNeeds: [...needs.entries()].sort((left, right) => right[1] - left[1]).slice(0, 3),
+    };
+  }, [attempts]);
 
   return (
     <div className="space-y-5">
@@ -3033,15 +2473,26 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
             <h3 className="mt-1 text-xl font-bold text-neutral-50 sm:text-2xl">Opening Hand Lab</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Random Hands reshuffle the full main deck. Manual Hand grades the seven cards you selected.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Every attempt draws a fresh seven. After a mulligan, choose the cards to put on the bottom and grade the resulting hand.</p>
           </div>
           <div className="grid w-full grid-cols-2 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:inline-grid sm:w-auto">
             {[{ id: "random", label: "Random Hand" }, { id: "manual", label: "Manual Hand" }].map((option) => <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-11 rounded px-2 py-2 text-sm font-semibold sm:px-3 ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>)}
           </div>
         </div>
-        {mode === "random" && <button type="button" onClick={drawHand} className="mt-3 min-h-12 w-full rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400 sm:mt-4 sm:w-auto">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Mulligans taken<select value={mulliganCount} onChange={(event) => { setMulliganCount(Number(event.target.value)); setPendingHand(null); setBottomIndexes([]); }} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-normal normal-case text-neutral-100 sm:w-48"><option value={0}>0 — keep seven</option><option value={1}>1 — bottom one</option><option value={2}>2 — bottom two</option></select></label>
+          {mode === "random" && <button type="button" onClick={drawHand} className="min-h-12 w-full rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400 sm:w-auto">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
+        </div>
         {mode === "manual" && <div className="mt-3 text-sm leading-6 text-neutral-400 sm:mt-4">Select exactly seven cards, then analyze that hand.</div>}
       </section>
+
+      {pendingHand && (
+        <section className={panelClass("p-3 sm:p-5")}>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-[11px] uppercase tracking-wide text-amber-400">London mulligan</div><h3 className="mt-1 text-xl font-bold text-neutral-50">Choose {mulliganCount} card{mulliganCount === 1 ? "" : "s"} to bottom</h3><p className="mt-1 text-sm text-neutral-400">The remaining {7 - mulliganCount} cards will be analyzed as your final hand.</p></div><span aria-live="polite" className="rounded border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm text-neutral-300">{bottomIndexes.length}/{mulliganCount} chosen</span></div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">{pendingHand.map((entry, index) => { const chosen = bottomIndexes.includes(index); return <button key={`${entry.name}-${entry.copyIndex ?? index}`} type="button" aria-pressed={chosen} onClick={() => setBottomIndexes((current) => chosen ? current.filter((item) => item !== index) : current.length < mulliganCount ? [...current, index] : current)} className={`min-h-14 rounded-lg border p-3 text-left text-sm font-semibold ${chosen ? "border-rose-500 bg-rose-950/40 text-rose-100" : "border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-amber-600"}`}><span className="line-clamp-2">{entry.name}</span><span className="mt-1 block text-[11px] font-normal uppercase tracking-wide text-neutral-500">{chosen ? "Bottoming" : "Keep"}</span></button>; })}</div>
+          <div className="mt-4 grid gap-2 sm:flex"><button type="button" onClick={() => { setPendingHand(null); setBottomIndexes([]); }} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm font-semibold text-neutral-300">Cancel</button><button type="button" disabled={bottomIndexes.length !== mulliganCount} onClick={confirmBottom} className="min-h-11 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze {7 - mulliganCount}-card hand</button></div>
+        </section>
+      )}
 
       {mode === "manual" && (
         <section className={panelClass("p-3 sm:p-5")}>
@@ -3074,6 +2525,8 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
       )}
 
       <MulliganResult selected={selected} result={result} cardMap={cardMap} />
+
+      {sessionStats && <section className={panelClass("p-3 sm:p-5")}><div className="text-[11px] uppercase tracking-wide text-neutral-500">Session trends</div><div className="mt-3 grid gap-3 sm:grid-cols-3"><Metric label="Keep rate" value={`${sessionStats.keepRate}%`} /><Metric label="Average score" value={sessionStats.averageScore} /><div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3"><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recurring needs</div><div className="mt-2 text-sm text-neutral-200">{sessionStats.recurringNeeds.length ? sessionStats.recurringNeeds.map(([label, count]) => `${label} (${count})`).join(", ") : "No recurring deficiency"}</div></div></div></section>}
 
       {attempts.length > 1 && <section className={panelClass("p-3 sm:p-5")}><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div><div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">{attempts.map((attempt) => <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`w-full rounded-lg border px-3 py-2 text-left text-sm sm:w-auto ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}><span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span><span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span></button>)}</div></section>}
     </div>
@@ -3191,7 +2644,7 @@ function CalculatingAnalysisPanel() {
   );
 }
 
-function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction }) {
+function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDataProgress, activeTab, setActiveTab, analysisSettings, setAnalysisSettings, coreCards, toggleCoreCard, constructionSession, onConstructionAction, roleOverrides, onRoleOverride, cutDecisions, setCutDecisions, onApplyCuts, mulliganSession, setMulliganSession }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [sortCol, setSortCol] = useState("score");
   const [sortDir, setSortDir] = useState("asc");
@@ -3286,12 +2739,14 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
                 sortDir={sortDir}
                 setSortCol={setSortCol}
                 setSortDir={setSortDir}
+                roleOverrides={roleOverrides}
+                onRoleOverride={onRoleOverride}
                 analysisReady={analysisReady}
               />
             )}
-            {activeTab === "mulligan" && <MulliganTab analysis={analysis} deck={deck} cardMap={cardMap} coreCards={coreCards} />}
-            {activeTab === "cuts" && <CutsTab analysis={analysis} cardMap={cardMap} analysisReady={analysisReady} />}
-            {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} />}
+            {activeTab === "mulligan" && <MulliganTab analysis={analysis} deck={deck} cardMap={cardMap} coreCards={coreCards} mulliganSession={mulliganSession} setMulliganSession={setMulliganSession} />}
+            {activeTab === "cuts" && <CutsTab analysis={analysis} cardMap={cardMap} analysisReady={analysisReady} cutDecisions={cutDecisions} setCutDecisions={setCutDecisions} onApplyCuts={onApplyCuts} />}
+            {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} cutDecisions={cutDecisions} />}
             {SHOW_DEBUG && activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
           </>
         )}
@@ -3313,6 +2768,9 @@ export default function App() {
   const [analysisSettings, setAnalysisSettings] = useState(DEFAULT_ANALYSIS_SETTINGS);
   const [coreCards, setCoreCards] = useState([]);
   const [constructionSession, setConstructionSession] = useState(null);
+  const [roleOverrides, setRoleOverrides] = useState({});
+  const [cutDecisions, setCutDecisions] = useState({});
+  const [mulliganSession, setMulliganSession] = useState({ attempts: [], selectedId: null, nextId: 1 });
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
@@ -3333,9 +2791,21 @@ export default function App() {
 
   const analysis = useMemo(() => {
     if (!deckModel) return null;
-    const localAnalysis = buildLocalAnalysis(deckModel, cardMap, { analysisSettings, coreCards });
+    const localAnalysis = buildLocalAnalysis(deckModel, cardMap, { analysisSettings, coreCards, roleOverrides });
     return mergeAnalysis(remoteAnalysis, localAnalysis);
-  }, [deckModel, cardMap, remoteAnalysis, analysisSettings, coreCards]);
+  }, [deckModel, cardMap, remoteAnalysis, analysisSettings, coreCards, roleOverrides]);
+
+  const handleRoleOverride = useCallback((name, role, value) => {
+    const cardKey = normalizeName(name);
+    setRoleOverrides((current) => {
+      if (!role) {
+        const next = { ...current };
+        delete next[cardKey];
+        return next;
+      }
+      return { ...current, [cardKey]: { ...(current[cardKey] || {}), [role]: value } };
+    });
+  }, []);
 
   const toggleCoreCard = (name) => {
     setCoreCards((current) => {
@@ -3363,6 +2833,9 @@ export default function App() {
     analysisRunIdRef.current = runId;
     setRemoteAnalysis(null);
     setNotFound([]);
+    setRoleOverrides({});
+    setCutDecisions({});
+    setMulliganSession({ attempts: [], selectedId: null, nextId: 1 });
     setCardDataLoading(false);
     setCardDataProgress("");
     constructionSessionRef.current = nextConstructionSession;
@@ -3476,6 +2949,7 @@ export default function App() {
     else if (action.type === "versusComparison") next = chooseVersusComparison(current, action.chosen, action.other);
     else if (action.type === "versusComparisonSetAside") next = setAsideVersusComparison(current, action.chosen, action.other);
     else if (action.type === "neitherSetAside") next = setAsideVersusPair(current, action.cards);
+    else if (action.type === "applyCuts") next = action.names.reduce((updated, name) => moveConstructionStack(updated, { name, from: "main", to: "setAside" }), current);
     else if (action.type === "undo") next = undoConstructionAction(current);
     else if (action.type === "restart") next = restartConstructionSession(current);
     if (next === current) return next;
@@ -3491,6 +2965,18 @@ export default function App() {
     setCoreCards((currentCards) => currentCards.filter((name) => next.main.some((entry) => normalizeName(entry.name) === normalizeName(name))));
     return next;
   }, []);
+
+  const handleApplyCuts = useCallback((names) => {
+    const appliedNames = (names || []).filter(Boolean);
+    if (!appliedNames.length) return;
+    handleConstructionAction({ type: "applyCuts", names: appliedNames });
+    setCutDecisions((current) => {
+      const next = { ...current };
+      for (const name of appliedNames) delete next[normalizeName(name)];
+      return next;
+    });
+    setActiveTab("construct");
+  }, [handleConstructionAction]);
 
   const handleClipboardPaste = useCallback(async () => {
     setError(null);
@@ -3558,7 +3044,7 @@ export default function App() {
         sidePanelOpen={sidePanelOpen}
         {...inputProps}
       />
-      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} />
+      <Dashboard analysis={analysis} deck={deckModel} cardMap={cardMap} notFound={notFound} cardDataLoading={cardDataLoading} cardDataProgress={cardDataProgress} activeTab={activeTab} setActiveTab={setActiveTab} analysisSettings={analysisSettings} setAnalysisSettings={setAnalysisSettings} coreCards={coreCards} toggleCoreCard={toggleCoreCard} constructionSession={constructionSession} onConstructionAction={handleConstructionAction} roleOverrides={roleOverrides} onRoleOverride={handleRoleOverride} cutDecisions={cutDecisions} setCutDecisions={setCutDecisions} onApplyCuts={handleApplyCuts} mulliganSession={mulliganSession} setMulliganSession={setMulliganSession} />
     </div>
   );
 }

@@ -162,3 +162,25 @@ test("glue recommendations group repairs by missing category with up to three ex
   assert.ok(result.glueNeeds.flatMap((need) => need.examples).every((item) => item.improvement > 0));
   assert.match(result.glueSummary, /missing categories/);
 });
+
+test("multiple major repair categories cannot remain labeled strong keep", () => {
+  const mana = [
+    card("Forest", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("Island", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+  ];
+  const heavy = Array.from({ length: 5 }, (_, index) => card(`Heavy ${index + 1}`, { type_line: "Creature", cmc: 6, oracle_text: "Flying." }));
+  const repair = [
+    card("Cheap Ramp", { cmc: 2, oracle_text: "Search your library for a basic land card, put it onto the battlefield." }),
+    card("Cheap Draw", { cmc: 2, oracle_text: "Draw two cards." }),
+  ];
+  const cards = [...mana, ...heavy, ...repair];
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand: [...mana, ...heavy].map((item) => ({ name: item.name })),
+    cardMap: mapOf(cards),
+  });
+
+  assert.notEqual(result.verdict.label, "Strong keep");
+  assert.ok(result.glueNeeds.length > 0);
+  assert.ok(result.glueNeeds.flatMap((need) => need.examples).every((example) => Number.isFinite(example.resultingScore)));
+});

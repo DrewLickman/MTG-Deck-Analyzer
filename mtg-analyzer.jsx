@@ -11,18 +11,39 @@ import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckP
 import { addCardToOpeningHand, analyzeOpeningHand, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
+const TAB_GROUPS = [
+  {
+    id: "analysis",
+    label: "Analysis",
+    tabs: [
+      { id: "scorecard", label: "Home" },
+      { id: "overview", label: "Game Plan" },
+      { id: "structure", label: "Coverage" },
+      { id: "power", label: "Power" },
+      { id: "mana", label: "Mana" },
+      { id: "cards", label: "Cards" },
+    ],
+  },
+  {
+    id: "build",
+    label: "Build",
+    tabs: [
+      { id: "construct", label: "Build" },
+      { id: "cuts", label: "Cuts" },
+      { id: "upgrades", label: "Upgrades" },
+    ],
+  },
+  {
+    id: "test",
+    label: "Test",
+    tabs: [{ id: "mulligan", label: "Mulligan" }],
+  },
+];
+
+const SHOW_DEBUG = process.env.NODE_ENV === "development";
 const TABS = [
-  { id: "scorecard", label: "Home" },
-  { id: "overview", label: "Game Plan" },
-  { id: "structure", label: "Coverage" },
-  { id: "power", label: "Power" },
-  { id: "mana", label: "Mana" },
-  { id: "cards", label: "Cards" },
-  { id: "construct", label: "Build" },
-  { id: "mulligan", label: "Mulligan" },
-  { id: "cuts", label: "Cuts" },
-  { id: "upgrades", label: "Upgrades" },
-  { id: "debug", label: "Debug" },
+  ...TAB_GROUPS.flatMap((group) => group.tabs),
+  ...(SHOW_DEBUG ? [{ id: "debug", label: "Debug" }] : []),
 ];
 
 const TAB_ICON_PATHS = {
@@ -39,30 +60,49 @@ const TAB_ICON_PATHS = {
   debug: ["M8 9h8v9a4 4 0 0 1-8 0V9Z", "M9 9V6a3 3 0 0 1 6 0v3", "M4 13h4", "M16 13h4", "M4 17h4", "M16 17h4"],
 };
 
-const ROLE_FILTERS = [
-  { id: "all", label: "All" },
-  { id: "ramp", label: "Ramp" },
-  { id: "draw", label: "Draw" },
-  { id: "removal", label: "Removal" },
-  { id: "boardWipe", label: "Wipes" },
-  { id: "tutor", label: "Tutors" },
-  { id: "cardSelection", label: "Selection" },
-  { id: "protection", label: "Protection" },
-  { id: "recursion", label: "Recursion" },
-  { id: "engine", label: "Engines" },
-  { id: "payoff", label: "Payoffs" },
-  { id: "finisher", label: "Finishers" },
-  { id: "tokenMaker", label: "Tokens" },
-  { id: "sacrificeOutlet", label: "Sac Outlets" },
-  { id: "graveyardHate", label: "Grave Hate" },
-  { id: "stax", label: "Stax" },
-  { id: "costReducer", label: "Reducers" },
-  { id: "manaFixing", label: "Fixing" },
-  { id: "haste", label: "Haste" },
-  { id: "evasion", label: "Evasion" },
-  { id: "lifeGain", label: "Lifegain" },
-  { id: "gameChanger", label: "Game Changers" },
-  { id: "core", label: "Core" },
+const ROLE_FILTER_GROUPS = [
+  {
+    label: "Strategy",
+    filters: [
+      { id: "engine", label: "Engines" },
+      { id: "payoff", label: "Payoffs" },
+      { id: "finisher", label: "Finishers" },
+      { id: "tokenMaker", label: "Tokens" },
+      { id: "sacrificeOutlet", label: "Sac Outlets" },
+      { id: "costReducer", label: "Reducers" },
+      { id: "haste", label: "Haste" },
+      { id: "evasion", label: "Evasion" },
+      { id: "core", label: "Core" },
+    ],
+  },
+  {
+    label: "Interaction",
+    filters: [
+      { id: "removal", label: "Removal" },
+      { id: "boardWipe", label: "Wipes" },
+      { id: "protection", label: "Protection" },
+      { id: "graveyardHate", label: "Grave Hate" },
+      { id: "stax", label: "Stax" },
+    ],
+  },
+  {
+    label: "Mana",
+    filters: [
+      { id: "ramp", label: "Ramp" },
+      { id: "manaFixing", label: "Fixing" },
+    ],
+  },
+  {
+    label: "Utility",
+    filters: [
+      { id: "draw", label: "Draw" },
+      { id: "tutor", label: "Tutors" },
+      { id: "cardSelection", label: "Selection" },
+      { id: "recursion", label: "Recursion" },
+      { id: "lifeGain", label: "Lifegain" },
+      { id: "gameChanger", label: "Game Changers" },
+    ],
+  },
 ];
 
 function extractMoxfieldDeckUrl(value = "") {
@@ -575,37 +615,15 @@ function HomeDeckHeader({ deck, coreCards, toggleCoreCard }) {
 function SummaryStrip({ analysis, deck, analysisReady }) {
   const bracket = analysis.bracket;
   const manaFit = analysis.manaFit || analysis.structure?.manaFit;
-  const winPlan = analysis.structure?.winPlan;
-  const topFinding = (analysis.priorityFindings || []).find((finding) => finding.severity !== "notice") || analysis.priorityFindings?.[0];
+  const interaction = analysis.structure?.interactionProfile;
   return (
     <section className={panelClass("min-w-0 p-4")}>
       <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Snapshot</div>
-      <div className="mt-1 text-xs text-neutral-500">{deck.cardCount}/{deck.expectedMainCount} main-deck cards</div>
-      <div
-        aria-label="Deck snapshot metrics"
-        tabIndex={0}
-        className="mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-2 md:grid md:grid-cols-2 md:overflow-visible md:overscroll-auto md:pb-0 xl:grid-cols-4"
-      >
-          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(topFinding?.severity || "notice")}`}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
-            <div className="mt-1 text-sm font-semibold">{topFinding?.label || "No active issue"}</div>
-            <div className="mt-1 text-xs text-neutral-300">{topFinding?.action || "Tune from actual games and matchup needs."}</div>
-          </div>
-          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(manaFit?.status)}`}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Mana Fit</div>
-            <div className="mt-1 text-sm font-semibold capitalize">{calculationValue(analysisReady, manaFit?.status)}</div>
-            <div className="mt-1 text-xs text-neutral-300">{manaFit ? `${manaFit.currentLands} lands, ${manaFit.currentRamp} ramp` : "Loading"}</div>
-          </div>
-          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${statusClasses(winPlan?.status)}`}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Game Plan</div>
-            <div className="mt-1 text-sm font-semibold capitalize">{calculationValue(analysisReady, winPlan?.status)}</div>
-            <div className="mt-1 text-xs text-neutral-300">{winPlan?.primary || "Unknown"}</div>
-          </div>
-          <div className={`w-[82vw] max-w-[82vw] flex-none snap-start rounded-lg border p-3 md:w-auto md:max-w-none ${analysisReady ? (bracket?.bracket >= 4 ? statusClasses("bad") : bracket?.bracket === 3 ? statusClasses("warn") : statusClasses("good")) : statusClasses()}`}>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Power</div>
-            <div className="mt-1 text-sm font-semibold">{calculationValue(analysisReady, bracket?.rangeLabel)}</div>
-            <div className="mt-1 text-xs text-neutral-300">{analysisReady ? bracket?.label : "Loading"}</div>
-          </div>
+      <div aria-label="Deck snapshot metrics" className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
+        <Metric label="Main deck" value={calculationValue(analysisReady, `${deck.cardCount}/${deck.expectedMainCount}`)} tone={deck.cardCount === deck.expectedMainCount ? "good" : "warn"} sub="Excludes commander" />
+        <Metric label="Mana" value={calculationValue(analysisReady, `${manaFit?.currentRamp ?? 0} ramp`)} tone={manaFit?.status === "good" ? "good" : manaFit?.status === "bad" ? "bad" : "warn"} sub={manaFit ? `Target ${manaFit.rampRange.min}–${manaFit.rampRange.max}` : "Loading"} />
+        <Metric label="Answers" value={calculationValue(analysisReady, interaction?.total ?? 0)} tone={interaction?.status === "good" ? "good" : interaction?.status === "bad" ? "bad" : "warn"} sub="Removal and wipes" />
+        <Metric label="Power" value={calculationValue(analysisReady, bracket?.rangeLabel)} tone={bracket?.bracket >= 4 ? "bad" : bracket?.bracket === 3 ? "warn" : "good"} sub={analysisReady ? bracket?.label : "Loading"} />
       </div>
     </section>
   );
@@ -737,226 +755,54 @@ function priorityClasses(priority) {
   return "border-neutral-800 bg-neutral-950 text-neutral-300";
 }
 
-function ActionPlanPanel({ actionPlan, setActiveTab }) {
-  const tasks = actionPlan?.tasks || [];
+function NextStepCard({ step, setActiveTab }) {
   return (
-    <section className={panelClass("p-4 sm:p-5")}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <article className={`rounded-lg border p-3 sm:p-4 ${priorityClasses(step.priority)}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Action Plan</div>
-          <div className="mt-1 text-sm text-neutral-300">{actionPlan?.headline || "No action plan available yet."}</div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:min-w-[220px]">
-          <Metric label="Required" value={actionPlan?.requiredCount ?? 0} tone={(actionPlan?.requiredCount || 0) > 0 ? "bad" : "good"} />
-          <Metric label="Tuning" value={actionPlan?.recommendedCount ?? 0} tone={(actionPlan?.recommendedCount || 0) > 0 ? "warn" : "neutral"} />
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-2">
-          {tasks.length ? tasks.map((task, index) => (
-            <article key={task.id || `${task.label}-${index}`} className={`rounded border p-3 ${priorityClasses(task.priority)}`}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded border border-current/40 font-mono text-xs">{index + 1}</span>
-                    <span className="text-sm font-semibold">{task.label}</span>
-                    <span className="rounded border border-current/30 px-1.5 py-0.5 text-[11px] uppercase">{task.priority}</span>
-                  </div>
-                  <p className="mt-2 text-sm text-neutral-300">{task.action}</p>
-                  <p className="mt-1 text-xs text-neutral-500">{task.detail}</p>
-                  {(task.relatedCards || []).length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {task.relatedCards.slice(0, 5).map((card) => <span key={card} className="rounded border border-neutral-700 bg-neutral-950/70 px-2 py-0.5 text-xs text-neutral-300">{card}</span>)}
-                    </div>
-                  )}
-                </div>
-                {task.tab && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab(task.tab)}
-                    className="min-h-9 shrink-0 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-200 hover:border-amber-500 hover:text-amber-200"
-                  >
-                    Open {TABS.find((tab) => tab.id === task.tab)?.label || "tab"}
-                  </button>
-                )}
-              </div>
-            </article>
-          )) : <div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-500">No required tasks are active.</div>}
-        </div>
-
-        <aside className="space-y-3">
-          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Cuts</div>
-            <div className="mt-2 space-y-2">
-              {(actionPlan?.nextCuts || []).slice(0, 4).map((candidate) => (
-                <div key={candidate.name} className="text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-neutral-100">{candidate.name}</span>
-                    <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.required ? "required" : candidate.confidence}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
-                </div>
-              ))}
-              {!(actionPlan?.nextCuts || []).length && <div className="text-sm text-neutral-500">No cut queue yet.</div>}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">{step.title}</h3>
+            <span className="rounded border border-current/30 px-1.5 py-0.5 text-[10px] uppercase">{step.priority}</span>
           </div>
-
-          <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Adds</div>
-            <div className="mt-2 space-y-2">
-              {(actionPlan?.nextAdds || []).slice(0, 3).map((upgrade) => (
-                <div key={`${upgrade.add}-${upgrade.cut}`} className="text-sm">
-                  <div className="font-semibold text-neutral-100">{upgrade.add}</div>
-                  <div className="mt-1 text-xs text-neutral-500">Test over {upgrade.cut}</div>
-                </div>
-              ))}
-              {!(actionPlan?.nextAdds || []).length && <div className="text-sm text-neutral-500">No add candidates supplied.</div>}
-            </div>
-          </div>
-        </aside>
+          <p className="mt-2 text-sm text-neutral-300">{step.summary}</p>
+          <p className="mt-2 text-sm font-medium text-neutral-100">{step.action}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab(step.tab)}
+          className="min-h-9 shrink-0 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-100 hover:border-amber-500 hover:text-amber-200"
+        >
+          Open {TABS.find((tab) => tab.id === step.tab)?.label || "details"}
+        </button>
       </div>
-    </section>
+    </article>
   );
 }
 
 function ScorecardTab({ analysis, settings, setSettings, setActiveTab, analysisReady }) {
-  const actionFindings = (analysis.priorityFindings || []).filter((finding) => finding.severity !== "notice").slice(0, 4);
-  const topCuts = (analysis.cutCandidates || []).slice(0, 4);
-  const topUpgrades = (analysis.upgrades || []).slice(0, 3);
-  const needsAttention = (analysis.highlights?.needsAttention || []).filter((item) => !item.ignored).slice(0, 4);
-  const strengths = (analysis.highlights?.strengths || []).filter((item) => !item.ignored).slice(0, 4);
-  const roadmap = analysis.roadmap || {};
-  const actionPlan = analysis.actionPlan || {};
-
+  const nextSteps = (analysis.nextSteps || []).slice(0, 3);
+  const activeFixes = (analysis.nextSteps || []).filter((step) => step.priority !== "optional").length;
   return (
     <div className="space-y-3 sm:space-y-4">
-      <section className="grid gap-3 sm:gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-        <div className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Home</div>
-          <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-5xl" : "text-3xl"}`}>{calculationValue(analysisReady, analysis.overallScore)}</div>
-          <div className="mt-3 text-sm text-neutral-400">Action dashboard based on the current commander, core cards, and tuning targets.</div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <Metric label="Active Fixes" value={calculationValue(analysisReady, actionFindings.length)} tone={analysisReady ? (actionFindings.length ? "warn" : "good") : "neutral"} />
-            <Metric label="Cut Ideas" value={calculationValue(analysisReady, topCuts.length)} tone="neutral" />
-          </div>
-        </div>
-
-        <div className={panelClass("p-4 sm:p-5")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
-          <div className="mt-3 grid gap-2 md:grid-cols-2">
-            {actionFindings.length
-              ? actionFindings.map((finding) => <FindingCard key={`${finding.label}-${finding.action}`} finding={finding} />)
-              : <FindingCard finding={{ severity: "notice", label: "No active fix", detail: "The main checks are not flagging a critical deckbuilding task.", action: "Use Cuts or playtest notes for finer tuning." }} />}
-          </div>
-        </div>
-      </section>
-
-      <ActionPlanPanel actionPlan={actionPlan} setActiveTab={setActiveTab} />
-
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Build Roadmap</div>
-            <div className="mt-1 text-sm text-neutral-300">{roadmap.headline || "Tune around the strongest game-plan pieces and playtest results."}</div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Overall Score</div>
+            <div className={`mt-1 font-bold text-neutral-50 ${analysisReady ? "text-5xl" : "text-3xl"}`}>{calculationValue(analysisReady, analysis.overallScore)}</div>
           </div>
-          <span className={`w-fit rounded border px-2 py-1 text-xs uppercase ${roadmap.status === "stable" ? "border-emerald-800 text-emerald-200" : "border-amber-800 text-amber-200"}`}>
-            {roadmap.status === "stable" ? "stable draft" : "needs work"}
-          </span>
-        </div>
-        <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-          <div className="space-y-2">
-            {(roadmap.steps || []).slice(0, 4).map((step, index) => (
-              <div key={`${step.label}-${index}`} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded border border-neutral-700 font-mono text-xs text-neutral-400">{index + 1}</span>
-                  <span className="text-sm font-semibold text-neutral-100">{step.label}</span>
-                </div>
-                <div className="mt-2 text-sm text-neutral-300">{step.action}</div>
-                <div className="mt-1 text-xs text-neutral-500">{step.reason}</div>
-              </div>
-            ))}
-            {!(roadmap.steps || []).length && <div className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-500">No urgent build steps are active; tune from matchup notes.</div>}
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-500">First Cuts</div>
-              <div className="mt-2 space-y-2">
-                {(roadmap.cutPriorities || []).slice(0, 3).map((candidate) => (
-                  <div key={candidate.name} className="text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-neutral-100">{candidate.name}</span>
-                      <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded border border-neutral-800 bg-neutral-950 p-3">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-500">Protect</div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {(roadmap.protect || []).length
-                  ? roadmap.protect.slice(0, 6).map((name) => <span key={name} className="rounded border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{name}</span>)
-                  : <span className="text-sm text-neutral-500">Mark core cards as you identify them.</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-3 sm:gap-4 xl:grid-cols-3">
-        <div className={panelClass("p-4")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Needs Attention</div>
-          <div className="mt-3 space-y-2">
-            {needsAttention.map((item) => (
-              <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <span className="text-sm text-neutral-200">{item.label}</span>
-                <span className={`font-mono text-sm ${analysisReady ? scoreColor(Math.round((item.score - 50) / 10)) : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className={panelClass("p-4")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Likely Cuts</div>
-          <div className="mt-3 space-y-2">
-            {topCuts.length ? topCuts.map((candidate) => (
-              <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-neutral-100">{candidate.name}</span>
-                  <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(candidate.confidence)}`}>{candidate.confidence}</span>
-                </div>
-                <div className="mt-1 text-xs text-neutral-500">{candidate.replacementNeed}</div>
-              </div>
-            )) : <div className="text-sm text-neutral-500">No cut candidates available yet.</div>}
-          </div>
-        </div>
-
-        <div className={panelClass("p-4")}>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strengths</div>
-          <div className="mt-3 space-y-2">
-            {strengths.map((item) => (
-              <div key={item.key} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950 px-3 py-2">
-                <span className="text-sm text-neutral-200">{item.label}</span>
-                <span className={`font-mono text-sm ${analysisReady ? "text-emerald-300" : "text-neutral-400"}`}>{calculationValue(analysisReady, item.score)}</span>
-              </div>
-            ))}
-          </div>
+          <Metric label="Next steps" value={calculationValue(analysisReady, activeFixes)} tone={activeFixes ? "warn" : "good"} sub="Decision-ready items" />
         </div>
       </section>
 
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Upgrade Ideas</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
-          {topUpgrades.length ? topUpgrades.map((upgrade) => (
-            <div key={`${upgrade.cut}-${upgrade.add}`} className="rounded border border-neutral-800 bg-neutral-950 p-3">
-              <div className="text-xs text-neutral-500">Swap</div>
-              <div className="mt-1 text-sm text-rose-200">{upgrade.cut}</div>
-              <div className="text-xs text-neutral-600">to</div>
-              <div className="text-sm font-semibold text-emerald-200">{upgrade.add}</div>
-            </div>
-          )) : <div className="text-sm text-neutral-500">No upgrade pairings available yet.</div>}
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Next Steps</div>
+          <div className="text-xs text-neutral-500">One action each</div>
+        </div>
+        <div className="mt-3 space-y-2">
+          {nextSteps.length
+            ? nextSteps.map((step) => <NextStepCard key={step.id} step={step} setActiveTab={setActiveTab} />)
+            : <div className="rounded border border-emerald-900 bg-emerald-950/30 p-3 text-sm text-emerald-100">No structural fix is active. Use playtest notes for the next change.</div>}
         </div>
       </section>
 
@@ -1085,28 +931,21 @@ function OverviewTab({ analysis, deck }) {
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.15fr_0.85fr]">
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Strategy</div>
-        <p className="mt-2 text-sm leading-6 text-neutral-300">{analysis.strategy}</p>
-
-        <div className="mt-5 space-y-3">
-          <div className={`rounded-lg border p-3 ${statusClasses(winPlan?.status)}`}>
-            <div className="text-xs uppercase tracking-wide text-neutral-500">Win Plan</div>
-            <div className="mt-1 text-sm font-semibold">{winPlan?.primary || "Unknown"}</div>
-            <div className="mt-2 text-sm text-neutral-300">{winPlan?.note}</div>
-          </div>
-          {[
-            ["Engines", winPlan?.engines],
-            ["Payoffs", winPlan?.payoffs],
-            ["Finishers", winPlan?.finishers],
-          ].map(([label, cards]) => (
-            <div key={label}>
-              <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {(cards || []).length
-                  ? cards.map((card) => <span key={card} className="rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-xs text-neutral-300">{card}</span>)
-                  : <span className="text-sm text-neutral-500">None clearly detected</span>}
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Three-Stage Plan</div>
+        <div className="mt-3 space-y-3">
+          {(winPlan?.stages || []).map((stage) => (
+            <article key={stage.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="font-semibold text-neutral-100">{stage.label}</div>
+                <div className="text-xs text-neutral-500">{stage.cards.length} examples</div>
               </div>
-            </div>
+              <p className="mt-1 text-sm text-neutral-400">{stage.summary}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {stage.cards.length
+                  ? stage.cards.map((card) => <span key={card} className="rounded border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-300">{card}</span>)
+                  : <span className="text-xs text-neutral-500">No clear example detected.</span>}
+              </div>
+            </article>
           ))}
         </div>
       </section>
@@ -1150,13 +989,14 @@ function OverviewTab({ analysis, deck }) {
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Synergy Clusters</div>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           {analysis.synergyClusters.map((cluster) => (
-            <details key={cluster.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4" open>
+            <details key={cluster.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
               <summary className="cursor-pointer text-sm font-semibold text-amber-200">{cluster.name}</summary>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {cluster.cards.map((card) => (
                   <span key={card} className="rounded border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-300">{card}</span>
                 ))}
               </div>
+              {cluster.secondaryCards?.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500"><span>Also tagged here:</span>{cluster.secondaryCards.map((card) => <span key={card} className="rounded border border-neutral-700 px-2 py-0.5 text-neutral-400">{card}</span>)}</div>}
               <p className="mt-3 text-sm text-neutral-400">{cluster.desc}</p>
             </details>
           ))}
@@ -1168,77 +1008,50 @@ function OverviewTab({ analysis, deck }) {
 
 function StructureTab({ analysis }) {
   const structure = analysis.structure || {};
-  const profiles = [
-    ["Interaction", structure.interactionProfile, [
-      ["Total", structure.interactionProfile?.total],
-      ["Instant", structure.interactionProfile?.instantSpeed],
-      ["Stack", structure.interactionProfile?.stackInteraction],
-    ]],
-    ["Card Flow", structure.cardFlowProfile, [
-      ["Draw", structure.cardFlowProfile?.draw],
-      ["Tutors", structure.cardFlowProfile?.tutors],
-      ["Engines", structure.cardFlowProfile?.engines],
-    ]],
-    ["Resilience", structure.resilienceProfile, [
-      ["Protect", structure.resilienceProfile?.protection],
-      ["Recursion", structure.resilienceProfile?.recursion],
-      ["Wipes", structure.resilienceProfile?.boardWipes],
-    ]],
-  ];
+  const gaps = (structure.answerGaps || []).filter((gap) => gap.severity === "gap");
+  const covered = (structure.answerGaps || []).filter((gap) => gap.severity === "covered");
 
   return (
     <div className="grid gap-3 sm:gap-4 xl:grid-cols-[1.1fr_0.9fr]">
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Role Balance</div>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Coverage</div>
         <div className="mt-3 grid gap-2 sm:gap-3 md:grid-cols-2">
           {(structure.roleBalance || []).map((role) => (
-            <div key={role.key} className={`rounded-lg border p-3 ${statusClasses(role.status)}`}>
-              <div className="flex items-start justify-between gap-3">
+            <details key={role.key} className={`rounded-lg border p-3 ${statusClasses(role.status)}`}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold">{role.label}</div>
-                  <div className="mt-1 text-xs text-neutral-500">Target {role.target}</div>
+                  <div className="mt-1 text-xs text-neutral-500">Target {role.target} · {role.status}</div>
                 </div>
                 <div className="text-2xl font-bold">{role.count}</div>
-              </div>
-              <div className="mt-3">
-                <MiniBar value={role.count} status={role.status} />
-              </div>
+              </summary>
               <p className="mt-3 text-sm text-neutral-300">{role.detail}</p>
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {role.examples.length
                   ? role.examples.map((card) => <span key={card} className="rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300">{card}</span>)
-                  : <span className="text-xs text-neutral-500">No clear examples detected</span>}
+                  : <span className="text-xs text-neutral-500">No clear examples detected.</span>}
               </div>
-            </div>
+            </details>
           ))}
         </div>
       </section>
 
       <div className="space-y-4">
-        {profiles.map(([label, profile, rows]) => (
-          <section key={label} className={panelClass("p-4 sm:p-5")}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-                <p className="mt-2 text-sm text-neutral-400">{profile?.note}</p>
-              </div>
-              <span className={`rounded border px-2 py-1 text-xs uppercase ${statusClasses(profile?.status)}`}>{profile?.status || "unknown"}</span>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {rows.map(([rowLabel, value]) => (
-                <Metric key={rowLabel} label={rowLabel} value={value ?? 0} />
-              ))}
-            </div>
-          </section>
-        ))}
-
         <section className={panelClass("p-4 sm:p-5")}>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500">Answer Gaps</div>
           <div className="mt-3 space-y-2">
-            {(structure.answerGaps || []).map((gap) => (
-              <StatusLine key={gap.key} ok={gap.ok}>{gap.message}</StatusLine>
-            ))}
+            {gaps.length
+              ? gaps.map((gap) => <StatusLine key={gap.key} ok={false}>{gap.message}</StatusLine>)
+              : <StatusLine ok>No active answer gap is detected.</StatusLine>}
           </div>
+          {covered.length > 0 && (
+            <details className="mt-3 rounded border border-neutral-800 bg-neutral-950 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-neutral-300">Covered categories ({covered.length})</summary>
+              <div className="mt-3 space-y-2">
+                {covered.map((gap) => <StatusLine key={gap.key} ok>{gap.message}</StatusLine>)}
+              </div>
+            </details>
+          )}
         </section>
       </div>
     </div>
@@ -1247,83 +1060,57 @@ function StructureTab({ analysis }) {
 
 function PowerTab({ analysis, analysisReady }) {
   const bracket = analysis.bracket;
-  const dimensions = bracket.dimensions || {};
+  const drivers = [
+    { key: "game-changers", label: "Game Changers", cards: bracket.gameChangers || [] },
+    { key: "fast-mana", label: "Fast Mana", cards: (bracket.speedSignals || []).filter((signal) => signal.type === "fast mana").map((signal) => signal.name) },
+    { key: "combos", label: "Compact Combos", cards: (bracket.comboSignals || []).map((combo) => combo.name) },
+    { key: "banned", label: "Banned Cards", cards: bracket.bannedCards || [] },
+  ];
+  const detectedDrivers = drivers.filter((driver) => driver.cards.length);
+  const absentDrivers = drivers.filter((driver) => !driver.cards.length).map((driver) => driver.label.toLowerCase());
+  const updatedAt = bracket.gameChangerMetadata?.generatedAt
+    ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${bracket.gameChangerMetadata.generatedAt}T00:00:00Z`))
+    : null;
   return (
-    <div className="grid gap-3 sm:gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+    <div className="space-y-3 sm:space-y-4">
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Bracket</div>
-        <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"}`}>{calculationValue(analysisReady, bracket.rangeLabel)}</div>
-        <div className="mt-1 text-sm text-neutral-400">{analysisReady ? `${bracket.label} confidence ${Math.round(bracket.confidence * 100)}%` : "Calculating..."}</div>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Metric label="Win Turn" value={calculationValue(analysisReady, `~${bracket.expectedWinTurn}`)} />
-          <Metric label="Game Changers" value={calculationValue(analysisReady, bracket.gameChangers.length)} tone={analysisReady ? (bracket.gameChangers.length > 3 ? "bad" : bracket.gameChangers.length ? "warn" : "good") : "neutral"} />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Commander Bracket</div>
+            <div className={`mt-2 font-bold text-neutral-50 ${analysisReady ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"}`}>{calculationValue(analysisReady, bracket.rangeLabel)}</div>
+            <div className="mt-1 text-sm text-neutral-400">{analysisReady ? `${bracket.label} · ${Math.round(bracket.confidence * 100)}% confidence` : "Calculating..."}</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:min-w-[280px]">
+            <Metric label="Estimated win" value={calculationValue(analysisReady, `~${bracket.expectedWinTurn}`)} />
+            <Metric label="Drivers" value={calculationValue(analysisReady, detectedDrivers.length)} tone={detectedDrivers.length ? "warn" : "good"} />
+          </div>
         </div>
       </section>
 
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Evidence</div>
-        <div className="mt-3 space-y-2">
-          {analysisReady ? bracket.reasons.map((reason) => (
-            <StatusLine key={reason} ok={bracket.bracket <= 2}>{reason}</StatusLine>
-          )) : <StatusLine ok={false}>Calculating...</StatusLine>}
-        </div>
-      </section>
-
-      <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Bracket Dimensions</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {["power", "consistency", "speed", "salt"].map((key) => {
-            const dimension = dimensions[key] || {};
-            return (
-              <details key={key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
-                <summary className="cursor-pointer text-sm font-semibold capitalize text-neutral-100">{key}</summary>
-                <div className="mt-3 space-y-2">
-                  {(dimension.positive || []).map((item) => (
-                    <StatusLine key={item.text} ok={false}>{item.text}</StatusLine>
-                  ))}
-                  {(dimension.negative || []).map((item) => (
-                    <StatusLine key={item.text} ok>{item.text}</StatusLine>
-                  ))}
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Detected Drivers</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {detectedDrivers.length
+            ? detectedDrivers.map((driver) => (
+              <div key={driver.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <div className="text-sm font-semibold text-neutral-100">{driver.label}</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {driver.cards.map((card) => <span key={card} className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300">{card}</span>)}
                 </div>
-              </details>
-            );
-          })}
+              </div>
+            ))
+            : <div className="text-sm text-neutral-500">No {absentDrivers.join(", ")} detected.</div>}
         </div>
+        {detectedDrivers.length > 0 && absentDrivers.length > 0 && <p className="mt-4 text-sm text-neutral-500">No {absentDrivers.join(", ")} detected.</p>}
+        {updatedAt && <p className="mt-3 text-xs text-neutral-600">Game Changer list updated {updatedAt}.</p>}
       </section>
 
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Signals</div>
-        <div className="mt-3 space-y-3">
-          <details className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
-            <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Game Changers</summary>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {analysisReady ? (bracket.gameChangers.length ? bracket.gameChangers.map((name) => <RoleChip key={name} role={name} />) : <span className="text-sm text-neutral-500">None detected</span>) : <span className="text-sm text-neutral-500">Calculating...</span>}
-            </div>
-            <div className="mt-2 text-xs text-neutral-600">{bracket.gameChangerVersion}</div>
-          </details>
-          <details className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
-            <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Speed</summary>
-            <div className="mt-3 space-y-1 text-sm text-neutral-400">
-              {analysisReady ? (bracket.speedSignals.length ? bracket.speedSignals.map((signal) => <div key={`${signal.type}-${signal.name}`}>{signal.type}: {signal.name}</div>) : <div>No fast speed cluster detected.</div>) : <div>Calculating...</div>}
-            </div>
-          </details>
+      <details className={panelClass("p-4 sm:p-5")}>
+        <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Details</summary>
+        <div className="mt-3 space-y-2">
+          {analysisReady ? bracket.reasons.map((reason) => <StatusLine key={reason} ok={bracket.bracket <= 2}>{reason}</StatusLine>) : <StatusLine ok={false}>Calculating...</StatusLine>}
         </div>
-      </section>
-
-      <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Combo Packages</div>
-        <div className="mt-3 space-y-3">
-          {!analysisReady ? <div className="text-sm text-neutral-500">Calculating...</div> : bracket.comboSignals.length ? bracket.comboSignals.map((combo) => (
-            <details key={combo.name} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3" open>
-              <summary className="cursor-pointer text-sm font-semibold text-neutral-200">{combo.name}</summary>
-              <div className="mt-2 text-sm text-neutral-400">{combo.matches.join(", ")}</div>
-            </details>
-          )) : <div className="text-sm text-neutral-500">No compact combo package detected.</div>}
-          {analysisReady && bracket.upgradeSuggestions.map((suggestion) => (
-            <StatusLine key={suggestion} ok={bracket.bracket <= 3}>{suggestion}</StatusLine>
-          ))}
-        </div>
-      </section>
+      </details>
     </div>
   );
 }
@@ -1348,9 +1135,6 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
             <Metric label="Avg MV" value={manaFit.averageManaValue} sub="Includes commander" tone={manaFit.curvePressure > 1 ? "warn" : "neutral"} />
             <Metric label="Top End" value={manaFit.topEndCount} sub="MV 5+" tone={manaFit.curvePressure > 1 ? "warn" : "neutral"} />
           </div>
-          <ul className="mt-4 grid gap-2 text-sm text-neutral-300 lg:grid-cols-2">
-            {manaFit.reasons.slice(0, 4).map((reason) => <li key={reason} className="rounded border border-neutral-800 bg-neutral-950 px-3 py-2">{reason}</li>)}
-          </ul>
         </section>
       )}
 
@@ -1382,7 +1166,7 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
       </section>
 
       <section className={panelClass("p-4 sm:p-5")}>
-        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Pip Distribution</div>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Colored Pip Demand</div>
         <div className="mt-4 h-56 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={pipData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
@@ -1396,13 +1180,14 @@ function ManaTab({ analysis, pipData, cmcBuckets }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-3 text-sm text-neutral-400">{analysis.splashNote}</p>
+        <p className="mt-1 text-xs text-neutral-500">Generic mana in costs: {analysis.genericMana ?? 0}. Generic costs are separate from colored pip demand.</p>
       </section>
 
       <section className={`${panelClass("p-4 sm:p-5")} xl:col-span-2`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Curve Bands</div>
-            <p className="mt-2 text-sm text-neutral-400">Mana-value bands grouped around setup, commander turns, and top end.</p>
+            <p className="mt-2 text-sm text-neutral-400">Setup, early, commander turn, midgame, then top end.</p>
           </div>
           <Metric label="Avg MV" value={analysis.stats?.avgCmc ?? "-"} tone={analysis.stats?.avgCmc <= analysis.settings?.avgManaValueTarget ? "good" : "warn"} sub={`Target ${analysis.settings?.avgManaValueTarget ?? "-"}`} />
         </div>
@@ -1469,15 +1254,28 @@ function CardGroupSections({ analysis, cardMap }) {
   );
 }
 
+function cardConclusion(score) {
+  const note = score.note || "";
+  if (score.protected && score.zone === "commanders") return "Command-zone card; not evaluated as a cut candidate.";
+  if (note.includes("identity overlap")) return "Directly overlaps with the commander or marked core cards.";
+  if (note.includes("competes with commander turn")) return "Competes with the commander's mana-value turn.";
+  if (note.includes("expensive low-synergy")) return "Expensive without enough visible strategic support.";
+  if (note.includes("core identity")) return "Protected as a marked core identity card.";
+  return "No stronger cut or identity signal is visible.";
+}
+
 function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, setRoleFilter, sortCol, sortDir, setSortCol, setSortDir, analysisReady }) {
   const [expanded, setExpanded] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const coreSet = useMemo(() => new Set((coreCards || []).map(normalizeName)), [coreCards]);
   const expandedSet = useMemo(() => new Set(expanded), [expanded]);
-  const cutsByName = useMemo(() => new Map((analysis.cutCandidates || []).map((candidate) => [normalizeName(candidate.name), candidate])), [analysis.cutCandidates]);
+  const shortlistLimit = Math.max(10, analysis.deckSizePlan?.cutsNeeded || 0);
+  const cutsByName = useMemo(() => new Map((analysis.cutCandidates || []).slice(0, shortlistLimit).map((candidate) => [normalizeName(candidate.name), candidate])), [analysis.cutCandidates, shortlistLimit]);
+  const analyzedNonLandCount = useMemo(() => (analysis.scores || []).filter((score) => score.zone !== "commanders").length, [analysis.scores]);
   const rows = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const filtered = analysis.scores.filter((score) => {
+      if (score.zone === "commanders") return false;
       if (roleFilter !== "all" && !score.roles?.includes(roleFilter)) return false;
       if (!search) return true;
       return score.name.toLowerCase().includes(search) || (score.roles || []).some((role) => (ROLE_LABELS[role] || role).toLowerCase().includes(search));
@@ -1506,8 +1304,8 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
     <section className={panelClass("overflow-hidden")}>
       <div className="grid gap-3 border-b border-neutral-800 p-3 sm:p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Dense Card Table</div>
-          <div className="mt-1 text-sm text-neutral-400">{rows.length} visible cards. Expand a row only when you need full text or art.</div>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">Card List</div>
+          <div className="mt-1 text-sm text-neutral-400">{analyzedNonLandCount} analyzed nonland cards. {rows.length} match the current filters.</div>
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_160px_auto_auto]">
           <input
@@ -1517,7 +1315,8 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
             className="min-h-9 rounded border border-neutral-800 bg-neutral-950 px-3 py-1 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500"
           />
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="min-h-9 rounded border border-neutral-800 bg-neutral-950 px-2 py-1 text-sm text-neutral-100">
-            {ROLE_FILTERS.map((filter) => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
+            <option value="all">All roles</option>
+            {ROLE_FILTER_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.filters.map((filter) => <option key={filter.id} value={filter.id}>{filter.label}</option>)}</optgroup>)}
           </select>
           <button type="button" onClick={() => setExpanded(rows.map((row) => row.name))} className="min-h-9 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-amber-500">
             Expand
@@ -1544,7 +1343,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                       <div className="font-medium leading-snug text-neutral-100">{score.name}</div>
                       <ManaCostDisplay card={card} />
                     </div>
-                    <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {score.note || "No special signal"}</div>
+                    <div className="mt-1 text-xs text-neutral-500">MV {card?.cmc ?? "-"} · {cardConclusion(score)}</div>
                   </div>
                   <div className={`shrink-0 rounded border border-neutral-700 px-2 py-1 font-mono text-sm ${analysisReady ? scoreColor(score.score) : "text-neutral-400"}`}>
                     {analysisReady ? `${score.score > 0 ? "+" : ""}${score.score}` : "Calculating..."}
@@ -1555,16 +1354,6 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                   {cutCandidate && <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(cutCandidate.confidence)}`}>cut {cutCandidate.confidence}</span>}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  toggleCoreCard(score.name);
-                }}
-                className={`mt-3 min-h-9 w-full rounded border px-3 py-2 text-xs font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500 hover:text-amber-200"}`}
-              >
-                {isCore ? "Core identity" : "Mark as core"}
-              </button>
               {isExpanded && (
                 <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
                   <div className="grid gap-3 sm:grid-cols-[120px_1fr]">
@@ -1575,6 +1364,16 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                       fallbackClassName="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500"
                     />
                     <div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleCoreCard(score.name);
+                        }}
+                        className={`min-h-9 rounded border px-3 py-2 text-xs font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500 hover:text-amber-200"}`}
+                      >
+                        {isCore ? "Remove core mark" : "Set core"}
+                      </button>
                       <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                       <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
                       <div className="mt-3 text-xs uppercase tracking-wide text-neutral-500">Card Text</div>
@@ -1622,16 +1421,6 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                       <div className="flex items-center gap-2">
                         <span>{score.name}</span>
                         <ManaCostDisplay card={card} />
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleCoreCard(score.name);
-                          }}
-                          className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-400 hover:border-amber-500 hover:text-amber-200"}`}
-                        >
-                          {isCore ? "Core" : "Set core"}
-                        </button>
                       </div>
                     </td>
                     <td className={`px-3 py-2 font-mono ${analysisReady ? scoreColor(score.score) : "text-neutral-400"}`}>{analysisReady ? `${score.score > 0 ? "+" : ""}${score.score}` : "Calculating..."}</td>
@@ -1647,7 +1436,7 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                         ? <span className={`rounded border px-1.5 py-0.5 text-[11px] uppercase ${confidenceClasses(cutCandidate.confidence)}`}>{cutCandidate.confidence}</span>
                         : <span className="text-xs text-neutral-600">-</span>}
                     </td>
-                    <td className="px-3 py-2 text-neutral-400">{score.note || "No special signal"}</td>
+                    <td className="px-3 py-2 text-neutral-400">{cardConclusion(score)}</td>
                   </tr>
                   {isExpanded && (
                     <tr className="border-t border-neutral-800 bg-neutral-950">
@@ -1661,6 +1450,16 @@ function CardsTab({ analysis, cardMap, coreCards, toggleCoreCard, roleFilter, se
                             fallbackClassName="flex aspect-[5/7] items-center justify-center rounded-md border border-neutral-800 text-center text-xs text-neutral-500"
                           />
                           <div>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleCoreCard(score.name);
+                              }}
+                              className={`min-h-9 rounded border px-3 py-2 text-xs font-semibold ${isCore ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500 hover:text-amber-200"}`}
+                            >
+                              {isCore ? "Remove core mark" : "Set core"}
+                            </button>
                             <div className="text-xs uppercase tracking-wide text-neutral-500">Type</div>
                             <div className="mt-1 text-sm text-neutral-200">{card?.type_line || "Unknown"}</div>
                           </div>
@@ -1701,11 +1500,17 @@ const TIER_META = {
   F: { label: "F", summary: "Cut first", className: "border-rose-700 bg-rose-950/35 text-rose-100" },
 };
 
-function TierListCard({ item, analysisReady, onDecision }) {
+function TierListCard({ item, analysisReady, onSelect }) {
   const candidate = item.cutCandidate;
   const decision = item.decision;
   return (
-    <article className="flex min-w-0 flex-col overflow-hidden rounded border border-neutral-800 bg-neutral-950 shadow-lg">
+    <button
+      type="button"
+      onClick={() => candidate && onSelect(item.name)}
+      disabled={!candidate}
+      aria-label={candidate ? `Review ${item.name} cut details` : `${item.name} is not a cut candidate`}
+      className="flex min-w-0 flex-col overflow-hidden rounded border border-neutral-800 bg-neutral-950 text-left shadow-lg enabled:hover:border-amber-500 disabled:cursor-default"
+    >
       <div className="border-b border-neutral-800 bg-neutral-900">
         <PreviewableCardImage
           card={item.card}
@@ -1729,40 +1534,28 @@ function TierListCard({ item, analysisReady, onDecision }) {
           {(item.roles || []).slice(0, 2).map((role) => <RoleChip key={role} role={role} />)}
           {(item.roles || []).length > 2 && <span className="rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-400">+{item.roles.length - 2}</span>}
         </div>
-        {candidate && (
-          <div className="mt-auto grid grid-cols-2 gap-1">
-            <button
-              type="button"
-              onClick={() => onDecision(item.name, decision === "cut" ? null : "cut")}
-              className={`min-h-7 rounded border px-2 py-1 text-[11px] font-semibold ${decision === "cut" ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-200 hover:border-rose-500 hover:text-rose-100"}`}
-            >
-              Cut
-            </button>
-            <button
-              type="button"
-              onClick={() => onDecision(item.name, decision === "keep" ? null : "keep")}
-              className={`min-h-7 rounded border px-2 py-1 text-[11px] font-semibold ${decision === "keep" ? "border-emerald-500 bg-emerald-500 text-neutral-950" : "border-neutral-700 text-neutral-200 hover:border-emerald-500 hover:text-emerald-100"}`}
-            >
-              Keep
-            </button>
-          </div>
-        )}
       </div>
-    </article>
+    </button>
   );
 }
 
-function DeckTierList({ analysis, cardMap, cutDecisions, onDecision, analysisReady }) {
-  const tierRows = useMemo(() => buildTierRows({ analysis, cardMap, cutDecisions }), [analysis, cardMap, cutDecisions]);
+function DeckTierList({ analysis, cardMap, cutDecisions, onSelect, analysisReady, candidateNames = null }) {
+  const tierRows = useMemo(() => {
+    const rows = buildTierRows({ analysis, cardMap, cutDecisions });
+    if (!candidateNames) return rows;
+    return rows
+      .map((row) => ({ ...row, cards: row.cards.filter((item) => candidateNames.has(normalizeName(item.name))) }))
+      .filter((row) => row.cards.length);
+  }, [analysis, cardMap, cutDecisions, candidateNames]);
   const totalCards = tierRows.reduce((sum, row) => sum + row.cards.length, 0);
   return (
     <section className={panelClass("overflow-hidden")}>
       <div className="border-b border-neutral-800 p-4 sm:p-5">
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Tier List</div>
-        <div className="mt-1 text-sm text-neutral-400">{totalCards} cards grouped from first cuts to strongest includes. Cut filters below do not hide cards here.</div>
+        <div className="mt-1 text-sm text-neutral-400">{totalCards} {candidateNames ? "cut suggestions" : "cards"} grouped from first cuts to strongest includes. Select a cut candidate for details.</div>
       </div>
       <div className="divide-y divide-neutral-800">
-        {tierRows.map((row) => {
+        {tierRows.length ? tierRows.map((row) => {
           const meta = TIER_META[row.tier];
           return (
             <div key={row.tier} className="grid gap-3 p-3 sm:grid-cols-[120px_minmax(0,1fr)] sm:p-4">
@@ -1776,13 +1569,13 @@ function DeckTierList({ analysis, cardMap, cutDecisions, onDecision, analysisRea
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-[1920px]:grid-cols-7">
                 {row.cards.length
                   ? row.cards.map((item) => (
-                    <TierListCard key={item.name} item={item} analysisReady={analysisReady} onDecision={onDecision} />
+                    <TierListCard key={item.name} item={item} analysisReady={analysisReady} onSelect={onSelect} />
                   ))
                   : <div className="flex min-h-40 items-center text-sm text-neutral-500">No cards in this tier.</div>}
               </div>
             </div>
           );
-        })}
+        }) : <div className="p-5 text-sm text-neutral-500">No cut suggestions match this filter.</div>}
       </div>
     </section>
   );
@@ -1926,7 +1719,7 @@ function CompareCandidatePanel({ candidate, decision, onDecision, analysisReady 
   );
 }
 
-function CutsTab({ analysis, cardMap, analysisReady }) {
+function LegacyCutsTab({ analysis, cardMap, analysisReady }) {
   const deckSizePlan = analysis.deckSizePlan || {};
   const requiredCuts = deckSizePlan.cutsNeeded || 0;
   const [cutCount, setCutCount] = useState(requiredCuts || 3);
@@ -2243,6 +2036,178 @@ function CutsTab({ analysis, cardMap, analysisReady }) {
   );
 }
 
+function CutsTab({ analysis, cardMap, analysisReady }) {
+  const deckSizePlan = analysis.deckSizePlan || {};
+  const requiredCuts = deckSizePlan.cutsNeeded || 0;
+  const [cutDecisions, setCutDecisions] = useState({});
+  const [showAll, setShowAll] = useState(false);
+  const [highConfidenceOnly, setHighConfidenceOnly] = useState(false);
+  const [selectedName, setSelectedName] = useState("");
+  const [compareA, setCompareA] = useState("");
+  const [compareB, setCompareB] = useState("");
+  const [exportCopyStatus, setExportCopyStatus] = useState("idle");
+  const candidates = analysis.cutCandidates || [];
+  const candidateKeys = useMemo(() => new Set(candidates.map((candidate) => normalizeName(candidate.name))), [candidates]);
+  const filteredCandidates = useMemo(
+    () => candidates.filter((candidate) => !highConfidenceOnly || candidate.confidence === "high"),
+    [candidates, highConfidenceOnly],
+  );
+  const visibleCandidates = showAll ? filteredCandidates : filteredCandidates.slice(0, 10);
+  const visibleCandidateNames = useMemo(
+    () => new Set(visibleCandidates.map((candidate) => normalizeName(candidate.name))),
+    [visibleCandidates],
+  );
+  const selectedCandidate = candidates.find((candidate) => candidate.name === selectedName) || visibleCandidates[0] || null;
+  const acceptedCuts = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "cut");
+  const keptCandidates = candidates.filter((candidate) => cutDecisions[normalizeName(candidate.name)] === "keep");
+  const tierByName = useMemo(
+    () => new Map(buildTierRows({ analysis, cardMap, cutDecisions }).flatMap((row) => row.cards.map((item) => [normalizeName(item.name), row.tier]))),
+    [analysis, cardMap, cutDecisions],
+  );
+  const comparisonChoices = visibleCandidates;
+  const compareLeft = comparisonChoices.find((candidate) => candidate.name === compareA);
+  const compareRight = comparisonChoices.find((candidate) => candidate.name === compareB);
+  const deckNeeds = (analysis.nextSteps || []).filter((step) => ["mana", "interaction", "flow", "resilience", "win-plan"].includes(step.category));
+  const exportText = [
+    "Cuts",
+    ...acceptedCuts.map((candidate) => `- ${candidate.name}: ${candidate.cutReason?.[0] || candidate.reasons?.[0] || "Review this slot."}`),
+    ...(keptCandidates.length ? ["", "Keep", ...keptCandidates.map((candidate) => `- ${candidate.name}`)] : []),
+  ].join("\n");
+
+  useEffect(() => {
+    setCutDecisions((current) => Object.fromEntries(Object.entries(current).filter(([name]) => candidateKeys.has(name))));
+  }, [candidateKeys]);
+
+  useEffect(() => {
+    if (visibleCandidates.some((candidate) => candidate.name === selectedName)) return;
+    setSelectedName(visibleCandidates[0]?.name || "");
+  }, [selectedName, visibleCandidates]);
+
+  useEffect(() => {
+    setExportCopyStatus("idle");
+  }, [exportText]);
+
+  const setCandidateDecision = (name, decision) => {
+    setCutDecisions((current) => {
+      const key = normalizeName(name);
+      const next = { ...current };
+      if (decision) next[key] = decision;
+      else delete next[key];
+      return next;
+    });
+  };
+
+  const copyExportText = async () => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(exportText);
+      setExportCopyStatus("copied");
+    } catch {
+      setExportCopyStatus("error");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Cut Finder</div>
+            <h2 className="mt-1 text-xl font-semibold text-neutral-50">{requiredCuts > 0 ? `Need ${requiredCuts} cut${requiredCuts === 1 ? "" : "s"}` : `Review ${visibleCandidates.length} suggestion${visibleCandidates.length === 1 ? "" : "s"}`}</h2>
+            <p className="mt-1 text-sm text-neutral-400">{requiredCuts > 0 ? `${deckSizePlan.totalCards} total cards; target ${deckSizePlan.targetTotal || 100}.` : "No size cuts are required; review only the suggestions worth testing."}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setHighConfidenceOnly((current) => !current)} className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${highConfidenceOnly ? "border-amber-500 bg-amber-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-amber-500"}`}>High confidence</button>
+            {filteredCandidates.length > 10 && <button type="button" onClick={() => setShowAll((current) => !current)} className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">{showAll ? "Show top 10" : "Show more"}</button>}
+          </div>
+        </div>
+      </section>
+
+      <DeckTierList analysis={analysis} cardMap={cardMap} cutDecisions={cutDecisions} onSelect={setSelectedName} analysisReady={analysisReady} candidateNames={visibleCandidateNames} />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        {false && <section className={panelClass("p-4 sm:p-5")}>
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">{requiredCuts > 0 ? `Review ${requiredCuts} suggestions` : "Review 10 suggestions"}</div>
+            <div className="text-xs text-neutral-500">{filteredCandidates.length} available</div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {visibleCandidates.map((candidate) => {
+              const selected = selectedCandidate?.name === candidate.name;
+              const tier = tierByName.get(normalizeName(candidate.name)) || "-";
+              return (
+                <button key={candidate.name} type="button" onClick={() => setSelectedName(candidate.name)} className={`w-full rounded-lg border p-3 text-left ${selected ? "border-amber-500 bg-amber-950/30" : "border-neutral-800 bg-neutral-950 hover:border-neutral-600"}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold text-neutral-100">{candidate.name}</span>
+                    <span className="rounded border border-neutral-700 px-1.5 py-0.5 text-[11px] text-neutral-300">Tier {tier} · {candidate.confidence}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-neutral-300">{candidate.cutReason?.[0] || candidate.reasons?.[0] || "Review this slot."}</p>
+                  <p className="mt-1 text-xs text-neutral-500">Replace with {candidate.replacementNeed}.</p>
+                </button>
+              );
+            })}
+            {!visibleCandidates.length && <div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-500">No suggestions match this filter.</div>}
+          </div>
+        </section>}
+
+        <aside className="space-y-4">
+          <section className={panelClass("p-4 sm:p-5")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggestion Details</div>
+            {selectedCandidate ? (() => {
+              const decision = cutDecisions[normalizeName(selectedCandidate.name)];
+              const card = findCard(cardMap, selectedCandidate.name);
+              const tier = tierByName.get(normalizeName(selectedCandidate.name)) || "-";
+              return (
+                <div className="mt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <CardPreview card={card} name={selectedCandidate.name} />
+                    <div className="flex gap-2">
+                      <span className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300">Tier {tier}</span>
+                      <span className={`rounded border px-2 py-1 text-xs uppercase ${confidenceClasses(selectedCandidate.confidence)}`}>{selectedCandidate.confidence}</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-neutral-300">{selectedCandidate.cutReason?.[0] || selectedCandidate.reasons?.[0] || "Review this slot."}</p>
+                  <p className="mt-2 text-sm text-neutral-500">Replacement need: {selectedCandidate.replacementNeed}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setCandidateDecision(selectedCandidate.name, decision === "cut" ? null : "cut")} className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${decision === "cut" ? "border-rose-500 bg-rose-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-rose-500 hover:text-rose-200"}`}>{decision === "cut" ? "Cut selected" : "Cut"}</button>
+                    <button type="button" onClick={() => setCandidateDecision(selectedCandidate.name, decision === "keep" ? null : "keep")} className={`min-h-9 rounded border px-3 py-1 text-xs font-semibold ${decision === "keep" ? "border-emerald-500 bg-emerald-500 text-neutral-950" : "border-neutral-700 text-neutral-300 hover:border-emerald-500 hover:text-emerald-200"}`}>{decision === "keep" ? "Keep selected" : "Keep"}</button>
+                  </div>
+                </div>
+              );
+            })() : <div className="mt-3 text-sm text-neutral-500">Select a cut candidate from the tier list or shortlist.</div>}
+          </section>
+
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Deck Needs</div>
+            <div className="mt-3 space-y-2">
+              {deckNeeds.length ? deckNeeds.map((step) => <div key={step.id} className="rounded border border-neutral-800 bg-neutral-950 p-3"><div className="font-semibold text-neutral-100">{step.title}</div><div className="mt-1 text-sm text-neutral-400">{step.summary}</div></div>) : <div className="text-sm text-neutral-500">No structural weakness is currently active.</div>}
+            </div>
+          </section>
+
+          <section className={panelClass("p-4")}>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">Compare Suggestions</div>
+            <div className="mt-3 grid gap-2">
+              <input list="cut-shortlist" value={compareA} onChange={(event) => setCompareA(event.target.value)} placeholder="Search first suggestion" className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100" />
+              <input list="cut-shortlist" value={compareB} onChange={(event) => setCompareB(event.target.value)} placeholder="Search second suggestion" className="min-h-10 rounded border border-neutral-800 bg-neutral-950 px-3 text-sm text-neutral-100" />
+              <datalist id="cut-shortlist">{comparisonChoices.map((candidate) => <option key={candidate.name} value={candidate.name} />)}</datalist>
+            </div>
+            {compareLeft && compareRight && <div className="mt-3 grid gap-2 sm:grid-cols-2">{[compareLeft, compareRight].map((candidate) => <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-950 p-3"><div className="font-semibold text-neutral-100">{candidate.name}</div><div className="mt-2 text-sm text-neutral-300">{candidate.cutReason?.[0] || candidate.reasons?.[0]}</div><div className="mt-2 text-xs text-neutral-500">Replacement: {candidate.replacementNeed}</div></div>)}</div>}
+          </section>
+
+          {Object.keys(cutDecisions).length > 0 && (
+            <details className={panelClass("p-4")}>
+              <summary className="cursor-pointer text-sm font-semibold text-neutral-200">Export decisions ({acceptedCuts.length} cuts, {keptCandidates.length} keeps)</summary>
+              <div className="mt-3 flex justify-end"><button type="button" onClick={copyExportText} className="min-h-9 rounded border border-neutral-700 px-3 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500">{exportCopyStatus === "copied" ? "Copied" : "Copy decisions"}</button></div>
+              {exportCopyStatus === "error" && <div className="mt-2 text-xs text-amber-200">Clipboard access was blocked; copy the text manually.</div>}
+              <textarea readOnly value={exportText} className="mt-3 min-h-40 w-full rounded border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs text-neutral-300" />
+            </details>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 function ConstructionCandidateCard({ name, sourceLabel, analysis, cardMap, children }) {
   const card = findCard(cardMap, name);
   const candidate = (analysis.sideboardAnalysis || []).find((item) => normalizeName(item.name) === normalizeName(name));
@@ -2263,7 +2228,7 @@ function ConstructionCandidateCard({ name, sourceLabel, analysis, cardMap, child
         <div className="flex min-w-0 flex-col p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <div className="text-[11px] uppercase tracking-wide text-amber-400">{sourceLabel || "Candidate pool card"}</div>
+              <div className="text-[11px] uppercase tracking-wide text-amber-400">{sourceLabel || "Candidate card"}</div>
               <div className="text-lg font-bold text-neutral-50">{name}</div>
               <div className="mt-1"><ManaCostDisplay card={card} /></div>
             </div>
@@ -2345,10 +2310,10 @@ function ConstructionZone({ zone, title, count, entries, cardMap, emptyText, ton
             <div className="flex shrink-0 items-center gap-1.5">
               {entry.qty > 1 && <span className="font-mono text-xs text-neutral-500">x{entry.qty}</span>}
               <details className="relative">
-                <summary aria-label={`Move ${entry.name} to another zone`} className="cursor-pointer rounded border border-neutral-700 px-2 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Move to…</summary>
+                <summary aria-label={`Move ${entry.name} to another zone`} className="cursor-pointer rounded border border-neutral-700 px-2 py-1 text-xs font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200">Move</summary>
                 <div className="absolute right-0 z-20 mt-1 min-w-44 rounded border border-neutral-700 bg-neutral-950 p-1 shadow-xl">
                   {CONSTRUCTION_ZONE_OPTIONS.filter((option) => option.id !== zone).map((option) => (
-                    <button key={option.id} type="button" onClick={() => onMoveStack({ name: entry.name, from: zone, to: option.id })} className="block w-full rounded px-2 py-1.5 text-left text-xs text-neutral-200 hover:bg-neutral-800 hover:text-amber-100">Move to {option.label}</button>
+                    <button key={option.id} type="button" aria-label={`Move ${entry.name} to ${option.label}`} onClick={() => onMoveStack({ name: entry.name, from: zone, to: option.id })} className="block w-full rounded px-2 py-1.5 text-left text-xs text-neutral-200 hover:bg-neutral-800 hover:text-amber-100">{option.label}</button>
                   ))}
                 </div>
               </details>
@@ -2383,11 +2348,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
   const totalDeckCount = counts.main + commanderCount;
   const totalCardsNeeded = Math.max(0, 100 - totalDeckCount);
   const totalCardsOver = Math.max(0, totalDeckCount - 100);
-  const totalDeckSub = totalDeckCount === 100
-    ? "Commander target reached"
-    : totalCardsNeeded
-      ? `${totalCardsNeeded} card${totalCardsNeeded === 1 ? "" : "s"} still needed`
-      : `${totalCardsOver} over 100-card target`;
+  const totalDeckSub = `${counts.main} main + ${commanderCount} commander = ${totalDeckCount}${totalCardsNeeded ? `; ${totalCardsNeeded} needed` : totalCardsOver ? `; ${totalCardsOver} over target` : ""}`;
   const shouldOfferMainDraft = counts.main > deck.expectedMainCount && counts.pool < 2;
 
   useEffect(() => {
@@ -2444,7 +2405,8 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
     setActiveDropZone(null);
   };
 
-  const roleSignals = (analysis.structure?.roleBalance || []).slice(0, 5);
+  const roleSignals = (analysis.structure?.roleBalance || []);
+  const belowTargetSignals = roleSignals.filter((role) => role.status !== "good");
 
   return (
     <div className="space-y-4">
@@ -2452,22 +2414,25 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.18em] text-amber-400">Deck Construction</div>
-            <h2 className="mt-1 text-2xl font-bold text-neutral-50">Build from the Moxfield sideboard</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">The main deck, candidate pool, and set-aside pile are independent. Set-aside cards stay excluded from future draws for this session; Undo or Restart are the recovery controls.</p>
+            <h2 className="mt-1 text-2xl font-bold text-neutral-50">Build from sideboard candidates</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">Move stacks between Main, Candidates, and Set Aside. Undo restores the last choice.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div role="toolbar" aria-label="Build actions" className="flex flex-wrap gap-2">
             <button type="button" onClick={() => onAction({ type: "undo" })} disabled={!session.history.length} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500 hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40">Undo</button>
             <button type="button" onClick={() => { onAction({ type: "restart" }); setMode("versus"); setDrawnCards([]); }} className="min-h-10 rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-rose-700 hover:text-rose-200">Restart draft</button>
-            <button type="button" onClick={() => { if (!canMoveMain) return; setMode("versus"); setMoveMainConfirmOpen(true); }} disabled={!canMoveMain} className="min-h-10 rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm font-semibold text-amber-100 hover:border-amber-500 hover:text-amber-50 disabled:cursor-not-allowed disabled:opacity-40">Move Main Deck to Sideboard</button>
-            <button type="button" onClick={() => { if (!canAddCandidateLands) return; const next = onAction({ type: "addCandidateLands", names: candidateLandEntries.map((entry) => entry.name) }); if (next !== session) setDrawnCards([]); }} disabled={!canAddCandidateLands} title={canAddCandidateLands ? `Move ${candidateLandCount} recognized land${candidateLandCount === 1 ? "" : "s"} to the main deck` : "No recognized land cards in the candidate pool"} className="min-h-10 rounded border border-emerald-800 bg-emerald-950/30 px-3 py-2 text-sm font-semibold text-emerald-100 hover:border-emerald-500 hover:text-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">Add all candidate-pool lands</button>
+            <details className="relative">
+              <summary className="min-h-10 cursor-pointer rounded border border-neutral-700 px-3 py-2 text-sm font-semibold text-neutral-300 hover:border-amber-500">Bulk actions</summary>
+              <div className="absolute right-0 z-20 mt-1 grid min-w-60 gap-1 rounded border border-neutral-700 bg-neutral-950 p-2 shadow-xl">
+                <button type="button" onClick={() => { if (!canMoveMain) return; setMode("versus"); setMoveMainConfirmOpen(true); }} disabled={!canMoveMain} className="min-h-10 rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-left text-sm font-semibold text-amber-100 hover:border-amber-500 disabled:cursor-not-allowed disabled:opacity-40">Move main to candidates</button>
+                <button type="button" onClick={() => { if (!canAddCandidateLands) return; const next = onAction({ type: "addCandidateLands", names: candidateLandEntries.map((entry) => entry.name) }); if (next !== session) setDrawnCards([]); }} disabled={!canAddCandidateLands} title={canAddCandidateLands ? `Move ${candidateLandCount} recognized land${candidateLandCount === 1 ? "" : "s"} to the main deck` : "No recognized land cards in the candidate pool"} className="min-h-10 rounded border border-emerald-800 bg-emerald-950/30 px-3 py-2 text-left text-sm font-semibold text-emerald-100 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-40">Add candidate lands</button>
+              </div>
+            </details>
           </div>
         </div>
 
-        {!canAddCandidateLands && <div className="mt-2 text-xs text-neutral-500">No recognized land cards are available in the candidate pool. Unknown card metadata stays in the pool.</div>}
-
         <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3">
           <Metric label="Deck Size" value={`${totalDeckCount}/100`} tone={totalDeckCount === 100 ? "good" : "warn"} sub={totalDeckSub} />
-          <Metric label="Candidate Pool" value={counts.pool} tone={counts.pool ? "neutral" : "warn"} sub="Moxfield sideboard" />
+          <Metric label="Sideboard pool" value={counts.pool} tone={counts.pool ? "neutral" : "warn"} sub="Candidates to review" />
           <Metric label="Set Aside" value={counts.setAside} tone={counts.setAside ? "bad" : "neutral"} sub="Excluded this session" />
         </div>
         <div className="mt-3 rounded border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-300">{session.notice}</div>
@@ -2488,7 +2453,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">Draft Mode</div>
-            <div className="mt-1 text-sm text-neutral-400">Pick One makes a direct keep-or-exclude decision. Versus lets you choose either card for the main deck or set either card aside while the other returns to the pool. Neither sets both displayed cards aside.</div>
+            <div className="mt-1 text-sm text-neutral-400">{mode === "pick" ? "Keep the card or set it aside." : "Choose one card for Main, or set aside the card you reject."}</div>
           </div>
           <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
             {[{ id: "pick", label: "Pick One" }, { id: "versus", label: "Versus" }].map((option) => (
@@ -2500,8 +2465,8 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
         <div className="mt-4">
           {shouldOfferMainDraft && (
             <div className="mb-3 rounded-lg border border-amber-700 bg-amber-950/40 p-4 text-amber-50">
-              <div className="font-semibold">Start draft from the oversized main deck</div>
-              <p className="mt-1 text-sm leading-6 text-amber-100/80">The candidate pool has fewer than two cards. Move all {counts.main} main-deck cards into the candidate pool, empty the main deck, and rebuild with Versus. Your commander stays separate.</p>
+              <div className="font-semibold">Start a fresh draft</div>
+              <p className="mt-1 text-sm leading-6 text-amber-100/80">Move the current main deck into Candidates, then rebuild with Versus. The commander stays separate.</p>
               <button type="button" onClick={() => { setMode("versus"); setMoveMainConfirmOpen(true); }} className="mt-3 min-h-11 rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-amber-400">Move all main-deck cards to candidate pool</button>
             </div>
           )}
@@ -2510,7 +2475,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
               {drawnCards.map((card, index) => {
                 const other = drawnCards[index === 0 ? 1 : 0];
                 return (
-                  <ConstructionCandidateCard key={`${mode}-${card.source}-${card.name}-${index}`} name={card.name} sourceLabel={card.source === "main" ? "Main deck card" : "Candidate pool card"} analysis={analysis} cardMap={cardMap}>
+                  <ConstructionCandidateCard key={`${mode}-${card.source}-${card.name}-${index}`} name={card.name} sourceLabel={card.source === "main" ? "Main deck card" : "Sideboard card"} analysis={analysis} cardMap={cardMap}>
                     {mode === "pick" ? (
                       <div className="grid gap-2 sm:grid-cols-2">
                         <button type="button" onClick={() => onAction({ type: "add", name: card.name })} className="min-h-11 rounded-lg bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 hover:bg-emerald-400">Add to main deck</button>
@@ -2529,7 +2494,7 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
           ) : (
             <div className="rounded-lg border border-dashed border-neutral-700 bg-neutral-950 p-8 text-center">
               <div className="text-sm font-semibold text-neutral-200">{shouldOfferMainDraft ? "Start a fresh draft from the oversized main deck." : counts.pool ? (mode === "versus" ? (versusNeedsSwap ? "Versus needs one main-deck card and one candidate-pool card." : "Versus needs at least two distinct candidate-pool cards.") : "No card drawn yet.") : "Candidate pool complete."}</div>
-              <div className="mt-1 text-xs text-neutral-500">{shouldOfferMainDraft ? "The quick action above moves the full main deck into the candidate pool after confirmation." : counts.pool ? (versusNeedsSwap ? "Choose or set aside either card; the other returns to its original zone." : "Use Pick One when only one candidate remains.") : "Undo or restart if you want to revisit a decision."}</div>
+              <div className="mt-1 text-xs text-neutral-500">{shouldOfferMainDraft ? "Use the action above to start with Candidates." : counts.pool ? (versusNeedsSwap ? "The unchosen card returns to its original zone." : "Use Pick One when one candidate remains.") : "Undo or restart to revisit a decision."}</div>
             </div>
           )}
         </div>
@@ -2548,25 +2513,27 @@ function DeckConstructionTab({ analysis, deck, cardMap, session, onAction, analy
       <section className={panelClass("p-4 sm:p-5")}>
         <div className="text-[11px] uppercase tracking-wide text-neutral-500">Live Deck Signals</div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          {roleSignals.map((role) => (
+          {belowTargetSignals.map((role) => (
             <div key={role.key} className={`rounded border px-3 py-2 ${statusClasses(role.status)}`}>
               <div className="text-xs text-neutral-400">{role.label}</div>
               <div className="mt-1 font-mono text-lg font-bold">{analysisReady ? role.count : "..."} <span className="text-xs font-normal text-neutral-500">/ {role.target}</span></div>
             </div>
           ))}
+          {!belowTargetSignals.length && <div className="rounded border border-emerald-900 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-100">All tracked coverage targets are met.</div>}
         </div>
+        {roleSignals.some((role) => role.status === "good") && <details className="mt-3 text-sm text-neutral-400"><summary className="cursor-pointer">Show covered signals</summary><div className="mt-2 flex flex-wrap gap-2">{roleSignals.filter((role) => role.status === "good").map((role) => <span key={role.key} className="rounded border border-emerald-900 px-2 py-1 text-xs text-emerald-200">{role.label}: {role.count}</span>)}</div></details>}
       </section>
 
       <div className="grid gap-3 xl:grid-cols-3">
         <ConstructionZone zone="main" title="Main Deck" count={counts.main} entries={session.main} cardMap={cardMap} emptyText="No main-deck cards yet." tone="main" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
-        <ConstructionZone zone="pool" title="Candidate Pool" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No candidates remain in the Moxfield sideboard pool." onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
+        <ConstructionZone zone="pool" title="Candidates" count={counts.pool} entries={session.pool} cardMap={cardMap} emptyText="No sideboard candidates remain." onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
         <ConstructionZone zone="setAside" title="Set Aside" count={counts.setAside} entries={session.setAside} cardMap={cardMap} emptyText="No cards have been excluded." tone="aside" onMoveStack={handleMoveStack} draggedStack={draggedStack} activeDropZone={activeDropZone} onDragStart={setDraggedStack} onDragEnd={endStackDrag} setActiveDropZone={setActiveDropZone} />
       </div>
     </div>
   );
 }
 
-function UpgradesTab({ analysis, analysisReady }) {
+function LegacyUpgradesTab({ analysis, analysisReady }) {
   const roadmap = analysis.roadmap || {};
   const candidateAdds = [...analysis.sideboardAnalysis, ...analysis.consideringAnalysis];
   const recommendedAdds = candidateAdds.filter((candidate) => candidate.recommendation === "add");
@@ -2695,6 +2662,61 @@ function UpgradesTab({ analysis, analysisReady }) {
   );
 }
 
+function UpgradesTab({ analysis, analysisReady }) {
+  const candidateAdds = useMemo(() => {
+    const byName = new Map();
+    for (const candidate of [...(analysis.sideboardAnalysis || []), ...(analysis.consideringAnalysis || [])]) {
+      const key = normalizeName(candidate.name);
+      const existing = byName.get(key);
+      if (!existing || (candidate.recommendation === "add" && existing.recommendation !== "add")) byName.set(key, candidate);
+    }
+    return [...byName.values()];
+  }, [analysis.consideringAnalysis, analysis.sideboardAnalysis]);
+  const groups = ["add", "maybe", "skip"].map((recommendation) => ({
+    recommendation,
+    label: recommendation === "add" ? "Add" : recommendation === "maybe" ? "Maybe" : "Skip",
+    cards: candidateAdds.filter((candidate) => candidate.recommendation === recommendation),
+  }));
+
+  return (
+    <div className="space-y-3 sm:space-y-4">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended Swaps</div>
+        <div className="mt-3 space-y-3">
+          {(analysis.upgrades || []).length
+            ? analysis.upgrades.map((upgrade) => (
+              <article key={`${upgrade.cut}-${upgrade.add}`} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 sm:p-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                  <div><div className="text-xs text-neutral-500">Cut</div><div className="font-semibold text-rose-200">{upgrade.cut}</div><div className={`text-xs font-mono ${analysisReady ? scoreColor(upgrade.cutScore) : "text-neutral-400"}`}>{analysisReady ? `${upgrade.cutScore > 0 ? "+" : ""}${upgrade.cutScore}` : "Calculating..."}</div></div>
+                  <div className="text-neutral-600">to</div>
+                  <div><div className="text-xs text-neutral-500">Add</div><div className="font-semibold text-emerald-200">{upgrade.add}</div></div>
+                </div>
+                <p className="mt-3 text-sm text-neutral-300">{upgrade.reason}</p>
+              </article>
+            ))
+            : <div className="rounded border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-500">No add-and-cut pair is available yet.</div>}
+        </div>
+      </section>
+
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">Suggested Cards</div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+          {groups.map((group) => (
+            <div key={group.recommendation} className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+              <div className={`text-sm font-semibold ${group.recommendation === "add" ? "text-emerald-200" : group.recommendation === "skip" ? "text-neutral-500" : "text-amber-200"}`}>{group.label}</div>
+              <div className="mt-3 space-y-2">
+                {group.cards.length
+                  ? group.cards.map((candidate) => <div key={candidate.name} className="rounded border border-neutral-800 bg-neutral-900/60 p-2"><div className="font-semibold text-neutral-100">{candidate.name}</div><p className="mt-1 text-xs leading-5 text-neutral-400">{candidate.benefit || candidate.reason}</p></div>)
+                  : <div className="text-sm text-neutral-600">None.</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function HandCard({ item }) {
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
@@ -2714,7 +2736,7 @@ function HandCard({ item }) {
   );
 }
 
-function MulliganTab({ analysis, deck, cardMap, coreCards }) {
+function LegacyMulliganTab({ analysis, deck, cardMap, coreCards }) {
   const [attempts, setAttempts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [manualHand, setManualHand] = useState([]);
@@ -2920,6 +2942,121 @@ function MulliganTab({ analysis, deck, cardMap, coreCards }) {
   );
 }
 
+function MulliganResult({ selected, result, cardMap }) {
+  if (!result) {
+    return (
+      <section className={panelClass("p-8 text-center")}>
+        <div className="text-lg font-semibold text-neutral-200">Ready for a first hand</div>
+        <div className="mt-2 text-sm text-neutral-500">Draw a random seven or switch to Manual Hand to grade the cards you actually drew.</div>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">{selected.source} · Attempt {selected.id}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-3"><h3 className="text-3xl font-bold text-neutral-50">{result.verdict.label}</h3><span className={`rounded-lg border px-3 py-1 font-mono text-lg font-bold ${statusClasses(result.verdict.status)}`}>{result.score}/100</span></div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            <Metric label="Sources" value={result.metrics.coloredSources} tone={result.metrics.coloredSources >= 2 && result.metrics.coloredSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} lands`} />
+            <Metric label="Early" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
+            <Metric label="Ramp" value={result.metrics.ramp} />
+            <Metric label="Flow" value={result.metrics.cardFlow} />
+            <Metric label="Answers" value={result.metrics.interaction} />
+            <Metric label="Engine" value={result.metrics.engineAccess} />
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">{result.cards.map((item, index) => <HandCard key={`${item.name}-${item.copyIndex ?? index}-${index}`} item={item} />)}</div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">What works</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.strengths.length ? result.strengths.map((item) => <div key={item}>• {item}</div>) : <div>No clear structural strength was detected.</div>}</div></div>
+          <div className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-amber-300">Keep risk</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.concerns.length ? result.concerns.map((item) => <div key={item}>• {item}</div>) : <div>No major opening-hand weakness was detected.</div>}</div></div>
+        </div>
+      </section>
+
+      {result.glueNeeds.length > 0 && (
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500">What this hand is missing</div>
+          <h3 className="mt-1 text-xl font-bold text-neutral-50">What would improve this hand</h3>
+          <p className="mt-2 text-sm text-neutral-400">{result.glueSummary}</p>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {result.glueNeeds.map((need) => (
+              <article key={need.key} className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
+                <div className="font-semibold text-neutral-100">{need.label}</div>
+                <div className="mt-2 text-sm text-neutral-300">{need.detail}</div>
+                <div className="mt-2 text-xs text-neutral-500">Best replacement result: {need.examples[0]?.resultingScore ?? result.score}/100</div>
+                <div className="mt-4 text-[11px] uppercase tracking-wide text-neutral-500">Examples from this deck</div>
+                <div className="mt-2 space-y-2">{need.examples.map((example) => <div key={example.name} className="flex items-center justify-between gap-3 rounded border border-neutral-800 bg-neutral-900/60 px-2.5 py-2"><CardPreview card={findCard(cardMap, example.name)} name={example.name} /><span className="shrink-0 font-mono text-xs text-emerald-300">Result {example.resultingScore}/100</span></div>)}</div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function MulliganTab({ analysis, deck, cardMap, coreCards }) {
+  const [mode, setMode] = useState("random");
+  const [attempts, setAttempts] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [manualHand, setManualHand] = useState([]);
+  const [cardSearch, setCardSearch] = useState("");
+  const attemptNumber = useRef(0);
+
+  const recordHand = (hand, source) => {
+    const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
+    attemptNumber.current += 1;
+    const attempt = { id: attemptNumber.current, hand, result, source };
+    setAttempts((current) => [attempt, ...current].slice(0, 8));
+    setSelectedId(attempt.id);
+  };
+  const drawHand = () => recordHand(drawOpeningHand(deck), "Random hand");
+  const analyzeManualHand = () => manualHand.length === 7 && recordHand(manualHand, "Manual hand");
+  const selectedCounts = useMemo(() => manualHand.reduce((counts, entry) => ({ ...counts, [normalizeName(entry.name)]: (counts[normalizeName(entry.name)] || 0) + 1 }), {}), [manualHand]);
+  const cardChoices = useMemo(() => {
+    const query = normalizeName(cardSearch);
+    return [...(deck.main || [])].filter((entry) => !query || normalizeName(entry.name).includes(query)).sort((left, right) => left.name.localeCompare(right.name)).slice(0, 12);
+  }, [cardSearch, deck.main]);
+  const selected = attempts.find((attempt) => attempt.id === selectedId) || attempts[0];
+  const result = selected?.result;
+
+  return (
+    <div className="space-y-5">
+      <section className={panelClass("p-4 sm:p-5")}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
+            <h3 className="mt-1 text-2xl font-bold text-neutral-50">Opening Hand Lab</h3>
+            <p className="mt-2 max-w-2xl text-sm text-neutral-400">Random Hands reshuffle the full main deck. Manual Hand grades the seven cards you selected.</p>
+          </div>
+          <div className="inline-flex w-fit rounded-lg border border-neutral-800 bg-neutral-950 p-1">
+            {[{ id: "random", label: "Random Hand" }, { id: "manual", label: "Manual Hand" }].map((option) => <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-10 rounded px-3 py-2 text-sm font-semibold ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>)}
+          </div>
+        </div>
+        {mode === "random" && <button type="button" onClick={drawHand} className="mt-4 min-h-12 rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
+        {mode === "manual" && <div className="mt-4 text-sm text-neutral-400">Select exactly seven cards, then analyze that hand.</div>}
+      </section>
+
+      <MulliganResult selected={selected} result={result} cardMap={cardMap} />
+
+      {mode === "manual" && (
+        <section className={panelClass("p-4 sm:p-5")}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Manual Hand</div><h3 className="mt-1 text-xl font-bold text-neutral-50">Select your seven</h3></div><span aria-live="polite" className={`shrink-0 rounded-lg border px-3 py-2 font-mono text-sm ${manualHand.length === 7 ? statusClasses("good") : "border-neutral-700 bg-neutral-950 text-neutral-300"}`}>{manualHand.length}/7 selected</span></div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+            <div><label htmlFor="opening-hand-search" className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Find a card in your deck</label><input id="opening-hand-search" type="search" value={cardSearch} onChange={(event) => setCardSearch(event.target.value)} placeholder="Search by card name" className="mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-amber-500" /><div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">{cardChoices.map((entry) => { const selectedCount = selectedCounts[normalizeName(entry.name)] || 0; const unavailable = manualHand.length >= 7 || selectedCount >= (Number(entry.qty) || 0); return <div key={entry.name} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2"><div className="min-w-0"><CardPreview card={findCard(cardMap, entry.name)} name={entry.name} /><div className="mt-1 font-mono text-[11px] text-neutral-500">{selectedCount}/{entry.qty} selected</div></div><button type="button" disabled={unavailable} onClick={() => setManualHand((current) => addCardToOpeningHand(deck, current, entry.name))} className="min-h-9 shrink-0 rounded-lg border border-amber-700 px-3 text-sm font-semibold text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:border-neutral-800 disabled:text-neutral-600">Add</button></div>; })}</div></div>
+            <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-3"><div className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Seven-slot hand</div><div aria-label={`${manualHand.length} of 7 selected hand slots`} className="mt-3 grid grid-cols-7 gap-1">{Array.from({ length: 7 }, (_, index) => { const entry = manualHand[index]; return <div key={entry ? `${entry.name}-${entry.copyIndex}` : `slot-${index}`} className={`aspect-[5/7] min-w-0 rounded border p-1 text-[9px] leading-tight ${entry ? "border-amber-700 bg-neutral-900 text-neutral-200" : "border-dashed border-neutral-700 bg-neutral-950 text-neutral-700"}`}>{entry ? <><div className="line-clamp-4">{entry.name}</div><button type="button" onClick={() => setManualHand((current) => removeCardFromOpeningHand(current, index))} className="mt-1 text-[9px] text-rose-300">Remove</button></> : null}</div>; })}</div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" disabled={manualHand.length === 0} onClick={() => setManualHand([])} className="min-h-11 rounded-lg border border-neutral-700 px-3 text-sm font-semibold text-neutral-300 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:text-neutral-700">Clear</button><button type="button" disabled={manualHand.length !== 7} onClick={analyzeManualHand} className="min-h-11 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze hand</button></div></div>
+          </div>
+        </section>
+      )}
+
+      {attempts.length > 1 && <section className={panelClass("p-4 sm:p-5")}><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recent independent attempts</div><div className="mt-3 flex flex-wrap gap-2">{attempts.map((attempt) => <button key={attempt.id} type="button" onClick={() => setSelectedId(attempt.id)} className={`rounded-lg border px-3 py-2 text-left text-sm ${selected?.id === attempt.id ? "border-amber-500 bg-amber-950/30 text-amber-100" : "border-neutral-800 bg-neutral-950 text-neutral-300"}`}><span className="font-semibold">#{attempt.id} {attempt.source} · {attempt.result.verdict.label}</span><span className="ml-2 font-mono text-xs text-neutral-500">{attempt.result.score}</span></button>)}</div></section>}
+    </div>
+  );
+}
+
 function DebugTab({ analysis, deck, cardMap, notFound }) {
   return (
     <section className={panelClass("p-4 sm:p-5")}>
@@ -2948,7 +3085,7 @@ function TabButton({ tab, activeTab, setActiveTab, mobile = false, vertical = fa
       data-desktop-tab={vertical ? tab.id : undefined}
       aria-current={activeTab === tab.id ? "page" : undefined}
       onClick={() => setActiveTab(tab.id)}
-      className={`${mobile ? "min-h-12 min-w-[104px] px-3 py-2 text-xs" : vertical ? "min-h-11 w-full justify-start px-3 py-2 text-left text-sm" : "min-h-10 px-3 py-2 text-sm"} inline-flex shrink-0 items-center gap-2 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
+      className={`${mobile ? "min-h-12 min-w-0 justify-center px-1 py-2 text-xs" : vertical ? "min-h-11 w-full justify-start px-3 py-2 text-left text-sm" : "min-h-10 px-3 py-2 text-sm"} inline-flex shrink-0 items-center gap-2 rounded-lg font-semibold ${activeTab === tab.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}
     >
       <TabIcon tabId={tab.id} />
       <span>{tab.label}</span>
@@ -2963,26 +3100,60 @@ function DesktopSidebar({ activeTab, setActiveTab, inputProps }) {
         <InputControls {...inputProps} compact showTitle={false} sidebar />
       </div>
       <nav aria-label="Analysis sections" className="min-h-0 flex-1 overflow-y-auto p-3">
-        <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">Analysis</div>
-        <div className="space-y-1">
-          {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} vertical />)}
+        <div className="space-y-5">
+          {TAB_GROUPS.map((group) => (
+            <section key={group.id}>
+              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">{group.label}</div>
+              <div className="space-y-1">{group.tabs.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} vertical />)}</div>
+            </section>
+          ))}
+          {SHOW_DEBUG && <section><div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-600">Development</div><TabButton tab={{ id: "debug", label: "Debug" }} activeTab={activeTab} setActiveTab={setActiveTab} vertical /></section>}
         </div>
       </nav>
     </aside>
   );
 }
 
-function MobileTabBar({ activeTab, setActiveTab }) {
-  const navRef = useRef(null);
+function TabletTabNav({ activeTab, setActiveTab }) {
+  return (
+    <nav aria-label="Section groups" className="sticky top-0 z-20 -mx-3 hidden grid-cols-4 gap-2 border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:grid lg:hidden">
+      <TabButton tab={{ id: "scorecard", label: "Home" }} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <details className="relative">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100">Analysis</summary>
+        <div className="absolute right-0 z-30 mt-1 grid min-w-44 gap-1 rounded-lg border border-neutral-700 bg-neutral-950 p-1 shadow-xl">
+          {TAB_GROUPS[0].tabs.filter((tab) => tab.id !== "scorecard").map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />)}
+        </div>
+      </details>
+      {TAB_GROUPS.filter((group) => group.id !== "analysis").map((group) => (
+        <details key={group.id} className="relative">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100">{group.label}</summary>
+          <div className="absolute left-0 z-30 mt-1 grid min-w-44 gap-1 rounded-lg border border-neutral-700 bg-neutral-950 p-1 shadow-xl">
+            {group.tabs.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />)}
+          </div>
+        </details>
+      ))}
+    </nav>
+  );
+}
 
-  useEffect(() => {
-    const activeButton = navRef.current?.querySelector(`[data-mobile-tab="${activeTab}"]`);
-    activeButton?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [activeTab]);
+function MobileTabBar({ activeTab, setActiveTab }) {
+  const primaryTabs = [
+    { id: "scorecard", label: "Home" },
+    { id: "construct", label: "Build" },
+    { id: "mulligan", label: "Mulligan" },
+    { id: "cuts", label: "Cuts" },
+  ];
+  const moreTabs = TABS.filter((tab) => !primaryTabs.some((primary) => primary.id === tab.id));
 
   return (
-    <nav ref={navRef} className="fixed inset-x-0 bottom-0 z-50 flex gap-2 overflow-x-auto border-t border-neutral-800 bg-neutral-950/95 px-3 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
-      {TABS.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} mobile />)}
+    <nav aria-label="Mobile sections" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 gap-1 border-t border-neutral-800 bg-neutral-950/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 shadow-2xl backdrop-blur md:hidden">
+      {primaryTabs.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} mobile />)}
+      <details className="relative">
+        <summary className={`flex min-h-12 cursor-pointer list-none items-center justify-center rounded-lg px-2 py-2 text-xs font-semibold ${moreTabs.some((tab) => tab.id === activeTab) ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:bg-neutral-900 hover:text-neutral-100"}`}>More</summary>
+        <div className="absolute bottom-full right-0 z-30 mb-2 grid min-w-44 gap-1 rounded-lg border border-neutral-700 bg-neutral-950 p-1 shadow-xl">
+          {moreTabs.map((tab) => <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />)}
+        </div>
+      </details>
     </nav>
   );
 }
@@ -3059,11 +3230,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
           </div>
         )}
 
-        <nav className="sticky top-0 z-20 -mx-3 hidden gap-2 overflow-x-auto border-b border-neutral-800 bg-neutral-950/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 md:flex lg:hidden">
-          {TABS.map((tab) => (
-            <TabButton key={tab.id} tab={tab} activeTab={activeTab} setActiveTab={setActiveTab} />
-          ))}
-        </nav>
+        <TabletTabNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
         {activeTab === "scorecard" && (
           <header className="space-y-4">
@@ -3101,7 +3268,7 @@ function Dashboard({ analysis, deck, cardMap, notFound, cardDataLoading, cardDat
             {activeTab === "mulligan" && <MulliganTab analysis={analysis} deck={deck} cardMap={cardMap} coreCards={coreCards} />}
             {activeTab === "cuts" && <CutsTab analysis={analysis} cardMap={cardMap} analysisReady={analysisReady} />}
             {activeTab === "upgrades" && <UpgradesTab analysis={analysis} analysisReady={analysisReady} />}
-            {activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
+            {SHOW_DEBUG && activeTab === "debug" && <DebugTab analysis={analysis} deck={deck} cardMap={cardMap} notFound={notFound} />}
           </>
         )}
       </div>

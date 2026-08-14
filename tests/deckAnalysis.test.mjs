@@ -153,7 +153,8 @@ Deck:
   assert.ok(commanderScore);
   assert.equal(commanderScore.protected, true);
   assert.ok(commanderScore.roles.includes("commander"));
-  assert.equal(commanderBand.label, "Commander Turn");
+  assert.equal(commanderBand.label, "Top End");
+  assert.ok(commanderBand.commanderNames.includes("Five Mana Commander"));
 });
 
 test("commander profile classifies clear commander roles", () => {
@@ -867,7 +868,7 @@ Deck:
   assert.equal(analysis.cutCandidates.filter((candidate) => candidate.sizeCutRecommended).length, 1);
   assert.equal(analysis.actionPlan.status, "required");
   assert.ok(analysis.actionPlan.requiredCount >= 1);
-  assert.ok(analysis.actionPlan.tasks.some((task) => task.label === "Deck has too many cards" && task.tab === "cuts"));
+  assert.ok(analysis.actionPlan.tasks.some((task) => task.id === "required-size-cuts" && task.tab === "cuts"));
   assert.ok(analysis.actionPlan.nextCuts.some((candidate) => candidate.required));
 });
 
@@ -1022,7 +1023,8 @@ Sideboard:
   assert.equal(analysis.sideboardAnalysis[0].recommendation, "add");
   assert.equal(analysis.upgrades[0].cut, "Seven Drop");
   assert.equal(analysis.upgrades[0].add, "Arcane Signet");
-  assert.match(analysis.upgrades[0].reason, /Cut candidate reason/);
+  assert.match(analysis.upgrades[0].reason, /Replace Seven Drop because/);
+  assert.doesNotMatch(analysis.upgrades[0].reason, /Fills a measured need/);
 });
 
 test("core identity cards propagate into synergy clusters", () => {
@@ -1067,7 +1069,84 @@ Deck:
 
   assert.equal(withoutCore.synergyClusters.some((cluster) => cluster.name === "Commander/Core Identity"), false);
   assert.ok(identityCluster.cards.includes("Young Pyromancer"));
-  assert.ok(identityCluster.cards.includes("Token Spell"));
-  assert.equal(tokenCluster.cards.length, 10);
+  assert.equal(identityCluster.cards.includes("Token Spell"), false);
+  assert.equal(tokenCluster.cards.length, 9);
   assert.ok(tokenCluster.cards.includes("Token Spell Nine"));
+  assert.ok(tokenCluster.secondaryCards.includes("Young Pyromancer"));
+});
+
+test("next steps use one semantic category, priority order, and destination tabs", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Rakdos Leader
+
+Deck:
+34 Swamp
+1 Seven Drop
+1 Blank Slot
+`);
+  const cardMap = {
+    "Rakdos Leader": card("Rakdos Leader", { cmc: 5, mana_cost: "{3}{B}{R}", type_line: "Legendary Creature", oracle_text: "Menace." }),
+    Swamp: makeBasicLandCard("Swamp"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Blank Slot": card("Blank Slot", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  const categories = analysis.nextSteps.map((step) => step.category);
+  const priority = { required: 0, recommended: 1, optional: 2 };
+
+  assert.equal(new Set(categories).size, categories.length);
+  assert.ok(analysis.nextSteps.every((step) => step.id && step.title && step.summary && step.action && step.tab));
+  assert.ok(analysis.nextSteps.every((step, index) => index === 0 || priority[analysis.nextSteps[index - 1].priority] <= priority[step.priority]));
+  assert.equal(analysis.nextSteps.find((step) => step.category === "mana")?.tab, "mana");
+  assert.match(analysis.nextSteps.find((step) => step.category === "mana")?.action || "", /^Add /);
+});
+
+test("Rakdos answer gaps omit counterspells", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Rakdos Leader
+
+Deck:
+36 Swamp
+1 Removal Spell
+`);
+  const cardMap = {
+    "Rakdos Leader": card("Rakdos Leader", { mana_cost: "{B}{R}", type_line: "Legendary Creature", oracle_text: "Menace." }),
+    Swamp: makeBasicLandCard("Swamp"),
+    "Removal Spell": card("Removal Spell", { mana_cost: "{1}{B}", type_line: "Instant", oracle_text: "Destroy target creature." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  assert.equal(analysis.structure.answerGaps.some((gap) => gap.key === "counterspells"), false);
+});
+
+test("each upgrade reason names its exact paired cut and benefit", () => {
+  const deck = parseDecklist(`
+Commander:
+1 Kykar, Wind's Fury
+
+Deck:
+36 Island
+1 Seven Drop
+1 Blank Slot
+
+Sideboard:
+1 Arcane Signet
+1 Lightning Bolt
+`);
+  const cardMap = {
+    "Kykar, Wind's Fury": card("Kykar, Wind's Fury", { cmc: 4, mana_cost: "{1}{U}{R}{W}", type_line: "Legendary Creature", oracle_text: "Whenever you cast a noncreature spell, create a Spirit token." }),
+    Island: makeBasicLandCard("Island"),
+    "Seven Drop": card("Seven Drop", { cmc: 7, mana_cost: "{7}", type_line: "Creature", oracle_text: "Vanilla large creature." }),
+    "Blank Slot": card("Blank Slot", { cmc: 4, mana_cost: "{4}", type_line: "Creature", oracle_text: "Vanilla creature." }),
+    "Arcane Signet": card("Arcane Signet", { cmc: 2, mana_cost: "{2}", type_line: "Artifact", oracle_text: "{T}: Add one mana of any color." }),
+    "Lightning Bolt": card("Lightning Bolt", { cmc: 1, mana_cost: "{R}", type_line: "Instant", oracle_text: "Lightning Bolt deals 3 damage to any target." }),
+  };
+
+  const analysis = buildLocalAnalysis(deck, cardMap);
+  assert.ok(analysis.upgrades.length >= 2);
+  assert.ok(analysis.upgrades.every((upgrade) => upgrade.reason.includes(`Replace ${upgrade.cut} because`)));
+  assert.ok(analysis.upgrades.every((upgrade) => upgrade.benefit && !upgrade.reason.includes("Fills a measured need")));
 });

@@ -107,7 +107,14 @@ test("Mulligan presents exclusive random and manual modes without additive repai
   assert.match(mulliganResult, /aria-label="Opening hand cards"/);
   assert.match(mulliganResult, /grid grid-cols-1 gap-2 sm:grid-cols-3/);
   assert.match(mulliganResult, /aria-label="Opening hand metrics"/);
-  assert.match(mulliganResult, /grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6/);
+  assert.match(mulliganResult, /grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7/);
+  assert.match(activeMulligan, /Mulligan &amp; Goldfish Lab/);
+  assert.match(activeMulligan, /<CommandZoneStrip deck=\{deck\} cardMap=\{cardMap\} \/>/);
+  assert.match(source, /function CommandZoneStrip/);
+  assert.match(source, /data-command-zone/);
+  assert.match(mulliganResult, /data-goldfish-plan/);
+  assert.match(mulliganResult, /aria-label="Three-turn goldfish plan"/);
+  assert.match(source, /function GoldfishTurn/);
   assert.match(source, /What would improve this hand/);
   assert.match(source, /Result \{example\.resultingScore\}\/100/);
   assert.doesNotMatch(activeMulligan, /Glue categories/);

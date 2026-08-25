@@ -9,7 +9,7 @@ import { addCandidateLandsToMain, addCandidateToMain, applyConstructionSession, 
 import { buildTierRows } from "./lib/deckTiers.mjs";
 import { extractSupportedDeckUrl } from "./lib/deckSource.mjs";
 import { deckLookupNames, parseDecklist, validateCommandZone } from "./lib/deckParser.mjs";
-import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, drawOpeningHand, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, drawFutureCards, drawOpeningSample, removeCardFromOpeningHand } from "./lib/openingHand.mjs";
 import { fetchScryfall, seedScryfallResults } from "./lib/scryfall.mjs";
 
 const TAB_GROUPS = [
@@ -2351,6 +2351,43 @@ function HandCard({ item }) {
   );
 }
 
+function CommandZoneStrip({ deck, cardMap }) {
+  const commanders = deck.commanders || [];
+  return (
+    <div data-command-zone className="mt-4 rounded-lg border border-amber-900/70 bg-amber-950/15 p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Command Zone</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {commanders.length ? commanders.map((entry) => {
+          const card = findCard(cardMap, entry.name);
+          return (
+            <article key={entry.name} className="flex min-w-0 items-center gap-2 rounded border border-neutral-800 bg-neutral-950 px-2 py-2">
+              <PreviewableCardImage card={card} name={entry.name} className="h-14 w-10 rounded object-cover" fallbackClassName="flex h-14 w-10 items-center justify-center rounded bg-neutral-900 p-1 text-center text-[8px] text-neutral-500" wrapperClassName="shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-neutral-100"><CardPreview card={card} name={entry.name} /></div>
+                <div className="mt-1"><ManaCostDisplay card={card} /></div>
+              </div>
+            </article>
+          );
+        }) : <div className="text-sm text-neutral-500">No Commander is available for this deck.</div>}
+      </div>
+    </div>
+  );
+}
+
+function GoldfishTurn({ turn }) {
+  return (
+    <article className="rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+      <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-neutral-100">Turn {turn.turn}</h4><span className="font-mono text-[11px] uppercase tracking-wide text-neutral-500">Goldfish line</span></div>
+      <div className="mt-3 space-y-3 text-sm">
+        <div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Draw</div><div className="mt-1">{turn.draw ? <CardPreview card={turn.draw.card} name={turn.draw.name} /> : <span className="text-neutral-500">No draw recorded</span>}</div></div>
+        <div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Land drop</div><div className="mt-1">{turn.land ? <CardPreview card={turn.land.card} name={turn.land.name} /> : <span className="text-neutral-500">No land to play</span>}</div></div>
+        <div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Recommended plays</div><div className="mt-1 flex flex-wrap items-center gap-1.5">{turn.plays.length ? turn.plays.map((play) => <span key={`${play.zone}-${play.name}`} className="inline-flex items-center gap-1"><CardPreview card={play.card} name={play.name} />{play.zone === "command" && <span className="rounded border border-amber-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-200">Commander</span>}</span>) : <span className="text-neutral-500">No proactive play</span>}</div></div>
+        {turn.held.length > 0 && <div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Hold for opponents</div><div className="mt-1 flex flex-wrap gap-1.5">{turn.held.map((card) => <CardPreview key={card.name} card={card.card} name={card.name} />)}</div></div>}
+      </div>
+    </article>
+  );
+}
+
 function MulliganResult({ selected, result, cardMap }) {
   if (!result) {
     return (
@@ -2361,6 +2398,8 @@ function MulliganResult({ selected, result, cardMap }) {
     );
   }
 
+  const goldfish = result.goldfish || { assumptions: "No three-turn goldfish line is available for this saved attempt.", turns: [] };
+
   return (
     <>
       <section className={panelClass("p-3 sm:p-5")}>
@@ -2369,8 +2408,9 @@ function MulliganResult({ selected, result, cardMap }) {
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">{selected.source} · Attempt {selected.id}</div>
             <div className="mt-1 flex flex-wrap items-center gap-2 sm:gap-3"><h3 className="text-2xl font-bold text-neutral-50 sm:text-3xl">{result.verdict.label}</h3><span className={`rounded-lg border px-3 py-1 font-mono text-base font-bold sm:text-lg ${statusClasses(result.verdict.status)}`}>{result.score}/100</span></div>
           </div>
-          <div aria-label="Opening hand metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <Metric label="Sources" value={result.metrics.coloredSources} tone={result.metrics.coloredSources >= 2 && result.metrics.coloredSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} lands`} />
+          <div aria-label="Opening hand metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
+            <Metric label="Sources" value={result.metrics.manaSources} tone={result.metrics.manaSources >= 2 && result.metrics.manaSources <= 4 ? "good" : "bad"} sub={`${result.metrics.lands} lands`} />
+            <Metric label="Colors" value={`${result.metrics.coveredColors.length}/${result.metrics.deckColors.length}`} tone={result.metrics.missingColors.length ? "warn" : "good"} sub={result.metrics.colorlessSources ? `${result.metrics.colorlessSources} colorless` : undefined} />
             <Metric label="Early" value={result.metrics.earlyPlays} tone={result.metrics.earlyPlays >= 2 ? "good" : "warn"} />
             <Metric label="Ramp" value={result.metrics.ramp} />
             <Metric label="Flow" value={result.metrics.cardFlow} />
@@ -2387,6 +2427,12 @@ function MulliganResult({ selected, result, cardMap }) {
           <div className="rounded-lg border border-emerald-900/70 bg-emerald-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">What works</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.strengths.length ? result.strengths.map((item) => <div key={item}>• {item}</div>) : <div>No clear structural strength was detected.</div>}</div></div>
           <div className="rounded-lg border border-amber-900/70 bg-amber-950/20 p-4"><div className="text-xs font-semibold uppercase tracking-wide text-amber-300">Keep risk</div><div className="mt-3 space-y-2 text-sm text-neutral-300">{result.concerns.length ? result.concerns.map((item) => <div key={item}>• {item}</div>) : <div>No major opening-hand weakness was detected.</div>}</div></div>
         </div>
+      </section>
+
+      <section data-goldfish-plan className={panelClass("p-3 sm:p-5")}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><div className="text-[11px] uppercase tracking-wide text-neutral-500">Three-turn goldfish</div><h3 className="mt-1 text-xl font-bold text-neutral-50">Recommended opening sequence</h3></div><div className="text-xs text-neutral-500">Draw, land, and proactive plays only</div></div>
+        <p className="mt-2 text-sm leading-6 text-neutral-400">{goldfish.assumptions}</p>
+        <div aria-label="Three-turn goldfish plan" className="mt-4 grid gap-3 md:grid-cols-3">{goldfish.turns.map((turn) => <GoldfishTurn key={turn.turn} turn={turn} />)}</div>
       </section>
 
       {result.glueNeeds.length > 0 && (
@@ -2417,6 +2463,7 @@ function MulliganTab({ analysis, deck, cardMap, coreCards, mulliganSession, setM
   const [cardSearch, setCardSearch] = useState("");
   const [mulliganCount, setMulliganCount] = useState(0);
   const [pendingHand, setPendingHand] = useState(null);
+  const [pendingFutureDraws, setPendingFutureDraws] = useState([]);
   const [pendingSource, setPendingSource] = useState("");
   const [bottomIndexes, setBottomIndexes] = useState([]);
   const attempts = mulliganSession.attempts;
@@ -2424,28 +2471,34 @@ function MulliganTab({ analysis, deck, cardMap, coreCards, mulliganSession, setM
   const setSelectedId = (id) => setMulliganSession((current) => ({ ...current, selectedId: id }));
 
   const recordHand = (hand, source, metadata = {}) => {
-    const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards });
+    const futureDraws = metadata.futureDraws || drawFutureCards(deck, hand);
+    const result = analyzeOpeningHand({ deck, hand, cardMap, analysis, coreCards, futureDraws });
     setMulliganSession((current) => {
-      const attempt = { id: current.nextId, hand, result, source, ...metadata };
+      const attempt = { id: current.nextId, hand, result, source, ...metadata, futureDraws };
       return { attempts: [attempt, ...current.attempts].slice(0, 20), selectedId: attempt.id, nextId: current.nextId + 1 };
     });
     setPendingHand(null);
+    setPendingFutureDraws([]);
     setBottomIndexes([]);
   };
-  const prepareHand = (hand, source) => {
-    if (mulliganCount === 0) recordHand(hand, source, { mulliganCount: 0, bottomed: [] });
+  const prepareHand = (hand, source, futureDraws = drawFutureCards(deck, hand)) => {
+    if (mulliganCount === 0) recordHand(hand, source, { mulliganCount: 0, bottomed: [], futureDraws });
     else {
       setPendingHand(hand);
+      setPendingFutureDraws(futureDraws);
       setPendingSource(source);
       setBottomIndexes([]);
     }
   };
-  const drawHand = () => prepareHand(drawOpeningHand(deck), "Random hand");
+  const drawHand = () => {
+    const sample = drawOpeningSample(deck);
+    prepareHand(sample.hand, "Random hand", sample.futureDraws);
+  };
   const analyzeManualHand = () => manualHand.length === 7 && prepareHand(manualHand, "Manual hand");
   const confirmBottom = () => {
     const hand = bottomCardsForLondonMulligan(pendingHand, bottomIndexes, mulliganCount);
     const bottomed = bottomIndexes.map((index) => pendingHand[index].name);
-    recordHand(hand, pendingSource, { mulliganCount, bottomed });
+    recordHand(hand, pendingSource, { mulliganCount, bottomed, futureDraws: pendingFutureDraws });
   };
   const selectedCounts = useMemo(() => manualHand.reduce((counts, entry) => ({ ...counts, [normalizeName(entry.name)]: (counts[normalizeName(entry.name)] || 0) + 1 }), {}), [manualHand]);
   const cardChoices = useMemo(() => {
@@ -2472,25 +2525,26 @@ function MulliganTab({ analysis, deck, cardMap, coreCards, mulliganSession, setM
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">First-hand testing</div>
-            <h3 className="mt-1 text-xl font-bold text-neutral-50 sm:text-2xl">Opening Hand Lab</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Every attempt draws a fresh seven. After a mulligan, choose the cards to put on the bottom and grade the resulting hand.</p>
+            <h3 className="mt-1 text-xl font-bold text-neutral-50 sm:text-2xl">Mulligan &amp; Goldfish Lab</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Every attempt draws a fresh seven and then previews one three-turn, no-opponents goldfish line. After a mulligan, choose the cards to put on the bottom and grade the resulting hand.</p>
           </div>
           <div className="grid w-full grid-cols-2 rounded-lg border border-neutral-800 bg-neutral-950 p-1 sm:inline-grid sm:w-auto">
             {[{ id: "random", label: "Random Hand" }, { id: "manual", label: "Manual Hand" }].map((option) => <button key={option.id} type="button" onClick={() => setMode(option.id)} className={`min-h-11 rounded px-2 py-2 text-sm font-semibold sm:px-3 ${mode === option.id ? "bg-amber-500 text-neutral-950" : "text-neutral-400 hover:text-neutral-100"}`}>{option.label}</button>)}
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
-          <label className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Mulligans taken<select value={mulliganCount} onChange={(event) => { setMulliganCount(Number(event.target.value)); setPendingHand(null); setBottomIndexes([]); }} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-normal normal-case text-neutral-100 sm:w-48"><option value={0}>0 — keep seven</option><option value={1}>1 — bottom one</option><option value={2}>2 — bottom two</option></select></label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Mulligans taken<select value={mulliganCount} onChange={(event) => { setMulliganCount(Number(event.target.value)); setPendingHand(null); setPendingFutureDraws([]); setBottomIndexes([]); }} className="mt-1 block min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm font-normal normal-case text-neutral-100 sm:w-48"><option value={0}>0 — keep seven</option><option value={1}>1 — bottom one</option><option value={2}>2 — bottom two</option></select></label>
           {mode === "random" && <button type="button" onClick={drawHand} className="min-h-12 w-full rounded-lg bg-amber-500 px-5 py-3 font-bold text-neutral-950 hover:bg-amber-400 sm:w-auto">{attempts.length ? "Draw fresh seven" : "Draw opening hand"}</button>}
         </div>
         {mode === "manual" && <div className="mt-3 text-sm leading-6 text-neutral-400 sm:mt-4">Select exactly seven cards, then analyze that hand.</div>}
+        <CommandZoneStrip deck={deck} cardMap={cardMap} />
       </section>
 
       {pendingHand && (
         <section className={panelClass("p-3 sm:p-5")}>
           <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="text-[11px] uppercase tracking-wide text-amber-400">London mulligan</div><h3 className="mt-1 text-xl font-bold text-neutral-50">Choose {mulliganCount} card{mulliganCount === 1 ? "" : "s"} to bottom</h3><p className="mt-1 text-sm text-neutral-400">The remaining {7 - mulliganCount} cards will be analyzed as your final hand.</p></div><span aria-live="polite" className="rounded border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm text-neutral-300">{bottomIndexes.length}/{mulliganCount} chosen</span></div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">{pendingHand.map((entry, index) => { const chosen = bottomIndexes.includes(index); return <button key={`${entry.name}-${entry.copyIndex ?? index}`} type="button" aria-pressed={chosen} onClick={() => setBottomIndexes((current) => chosen ? current.filter((item) => item !== index) : current.length < mulliganCount ? [...current, index] : current)} className={`min-h-14 rounded-lg border p-3 text-left text-sm font-semibold ${chosen ? "border-rose-500 bg-rose-950/40 text-rose-100" : "border-neutral-800 bg-neutral-950 text-neutral-200 hover:border-amber-600"}`}><span className="line-clamp-2">{entry.name}</span><span className="mt-1 block text-[11px] font-normal uppercase tracking-wide text-neutral-500">{chosen ? "Bottoming" : "Keep"}</span></button>; })}</div>
-          <div className="mt-4 grid gap-2 sm:flex"><button type="button" onClick={() => { setPendingHand(null); setBottomIndexes([]); }} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm font-semibold text-neutral-300">Cancel</button><button type="button" disabled={bottomIndexes.length !== mulliganCount} onClick={confirmBottom} className="min-h-11 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze {7 - mulliganCount}-card hand</button></div>
+          <div className="mt-4 grid gap-2 sm:flex"><button type="button" onClick={() => { setPendingHand(null); setPendingFutureDraws([]); setBottomIndexes([]); }} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm font-semibold text-neutral-300">Cancel</button><button type="button" disabled={bottomIndexes.length !== mulliganCount} onClick={confirmBottom} className="min-h-11 rounded-lg bg-emerald-500 px-4 text-sm font-bold text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-800 disabled:text-neutral-500">Analyze {7 - mulliganCount}-card hand</button></div>
         </section>
       )}
 

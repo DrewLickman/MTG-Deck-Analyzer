@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, drawOpeningHand, removeCardFromOpeningHand } from "../lib/openingHand.mjs";
+import { addCardToOpeningHand, analyzeOpeningHand, bottomCardsForLondonMulligan, buildGoldfishPlan, drawFutureCards, drawOpeningHand, drawOpeningSample, removeCardFromOpeningHand } from "../lib/openingHand.mjs";
 
 function card(name, options = {}) {
   return {
@@ -27,6 +27,18 @@ test("each opening hand starts from the full main deck", () => {
   assert.equal(first.length, 7);
   assert.deepEqual(second, first);
   assert.equal(deck.main.length, 8);
+});
+
+test("opening samples preserve three future draws and manual draws exclude the selected hand", () => {
+  const deck = { main: Array.from({ length: 10 }, (_, index) => ({ qty: 1, name: `Card ${index + 1}` })) };
+  const sample = drawOpeningSample(deck, () => 0);
+  assert.equal(sample.hand.length, 7);
+  assert.equal(sample.futureDraws.length, 3);
+  assert.equal(new Set([...sample.hand, ...sample.futureDraws].map((entry) => entry.name)).size, 10);
+
+  const manualDraws = drawFutureCards(deck, sample.hand, () => 0);
+  assert.equal(manualDraws.length, 3);
+  assert.ok(manualDraws.every((entry) => !sample.hand.some((held) => held.name === entry.name)));
 });
 
 test("manual opening-hand selection respects deck quantities and seven-card limit", () => {
@@ -95,8 +107,9 @@ test("opening-hand analysis rewards balanced mana, early action, and card flow",
   assert.equal(analysis.verdict.label, "Strong keep");
   assert.equal(analysis.metrics.lands, 3);
   assert.equal(analysis.metrics.coloredSources, 3);
-  assert.ok(analysis.metrics.earlyPlays >= 3);
-  assert.ok(analysis.strengths.some((item) => item.includes("functional mana base")));
+  assert.ok(analysis.metrics.earlyPlays >= 2);
+  assert.equal(analysis.metrics.manaSources, 3);
+  assert.ok(analysis.strengths.some((item) => item.includes("mana-producing lands")));
 });
 
 test("analyzed hands place lands first and sort nonlands by ascending mana value", () => {
@@ -126,7 +139,7 @@ test("analyzed hands place lands first and sort nonlands by ascending mana value
   ]);
 });
 
-test("colorless-only and non-mana lands do not support a strong keep", () => {
+test("colorless-only and non-mana lands remain distinct mana facts", () => {
   const wastes = card("Wastes", { type_line: "Basic Land — Wastes", cmc: 0, mana_cost: "", produced_mana: ["C"] });
   const ancientTomb = card("Ancient Tomb", { type_line: "Land", oracle_text: "{T}: Add {C}{C}.", cmc: 0, mana_cost: "", produced_mana: ["C"] });
   const maze = card("Maze of Ith", { type_line: "Land", oracle_text: "Untap target attacking creature. Prevent all combat damage.", cmc: 0, mana_cost: "", produced_mana: [] });
@@ -150,12 +163,14 @@ test("colorless-only and non-mana lands do not support a strong keep", () => {
   });
 
   assert.equal(result.metrics.lands, 3);
+  assert.equal(result.metrics.manaSources, 2);
   assert.equal(result.metrics.coloredSources, 0);
-  assert.equal(result.metrics.nonColoredLands, 3);
+  assert.equal(result.metrics.colorlessSources, 2);
+  assert.equal(result.metrics.nonManaLands, 1);
   assert.notEqual(result.verdict.label, "Strong keep");
-  assert.ok(result.concerns.some((item) => item.includes("cannot produce colored mana")));
+  assert.ok(result.concerns.some((item) => item.includes("cannot produce mana")));
   assert.equal(result.glueNeeds[0].key, "manaSources");
-  assert.deepEqual(result.glueNeeds[0].examples.map((item) => item.name), ["Forest", "Island", "Plains"]);
+  assert.deepEqual(result.glueNeeds[0].examples.map((item) => item.name), ["Forest"]);
 });
 
 test("glue recommendations group repairs by missing category with up to three examples", () => {
@@ -174,7 +189,7 @@ test("glue recommendations group repairs by missing category with up to three ex
   });
 
   assert.equal(result.verdict.label, "Mulligan");
-  assert.ok(result.concerns.some((item) => item.includes("Only 1 colored mana source")));
+  assert.ok(result.concerns.some((item) => item.includes("Only 1 mana-producing land source")));
   assert.equal(result.glueNeeds[0].key, "manaSources");
   assert.equal(result.glueNeeds[0].label, "Mana Sources");
   assert.ok(result.glueNeeds[0].examples.some((item) => ["Island", "Command Tower"].includes(item.name)));
@@ -203,4 +218,115 @@ test("multiple major repair categories cannot remain labeled strong keep", () =>
   assert.notEqual(result.verdict.label, "Strong keep");
   assert.ok(result.glueNeeds.length > 0);
   assert.ok(result.glueNeeds.flatMap((need) => need.examples).every((example) => Number.isFinite(example.resultingScore)));
+});
+
+test("a one-land hand full of two-drops and top end is a mulligan", () => {
+  const land = card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] });
+  const spells = [
+    card("Two A", { type_line: "Creature", cmc: 2, mana_cost: "{1}{G}" }),
+    card("Two B", { type_line: "Creature", cmc: 2, mana_cost: "{1}{G}" }),
+    card("Three", { type_line: "Creature", cmc: 3, mana_cost: "{2}{G}" }),
+    card("Five", { type_line: "Creature", cmc: 5, mana_cost: "{4}{G}" }),
+    card("Seven", { type_line: "Creature", cmc: 7, mana_cost: "{6}{G}" }),
+    card("Eight", { type_line: "Creature", cmc: 8, mana_cost: "{7}{G}" }),
+  ];
+  const cards = [land, ...spells];
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand: cards.map((item) => ({ name: item.name })),
+    cardMap: mapOf(cards),
+    analysis: { colorPips: { G: 12 } },
+  });
+
+  assert.ok(result.score < 45);
+  assert.equal(result.verdict.label, "Mulligan");
+  assert.equal(result.metrics.earlyPlays, 0);
+  assert.ok(result.concerns.some((item) => item.includes("1 lands has no immediately castable")));
+});
+
+test("a colorless-producing land counts when the colored lands cover a two-color deck", () => {
+  const cards = [
+    card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    card("Command Tower", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: ["G", "U"] }),
+    card("Wastes", { type_line: "Basic Land — Wastes", cmc: 0, mana_cost: "", produced_mana: ["C"] }),
+    card("Green Setup", { cmc: 2, mana_cost: "{1}{G}", oracle_text: "Draw a card." }),
+    card("Blue Setup", { cmc: 2, mana_cost: "{1}{U}", oracle_text: "Scry 2, then draw a card." }),
+    card("Payoff", { type_line: "Creature", cmc: 3, mana_cost: "{2}{G}" }),
+  ];
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand: cards.map((item) => ({ name: item.name })),
+    cardMap: mapOf(cards),
+    analysis: { colorPips: { G: 8, U: 6 } },
+  });
+
+  assert.equal(result.metrics.lands, 4);
+  assert.equal(result.metrics.manaSources, 4);
+  assert.equal(result.metrics.colorlessSources, 1);
+  assert.deepEqual(result.metrics.coveredColors, ["U", "G"]);
+  assert.deepEqual(result.metrics.missingColors, []);
+  assert.ok(result.strengths.some((item) => item.includes("already covers every deck color")));
+  assert.ok(!result.concerns.some((item) => item.includes("colorless mana")));
+});
+
+test("missing early colors and non-mana lands receive precise warnings", () => {
+  const cards = [
+    card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] }),
+    card("Maze of Ith", { type_line: "Land", cmc: 0, mana_cost: "", produced_mana: [] }),
+    card("Black Spell", { cmc: 2, mana_cost: "{1}{B}", oracle_text: "Draw a card." }),
+    card("Green Spell", { cmc: 2, mana_cost: "{1}{G}", oracle_text: "Draw a card." }),
+    card("Expensive One", { type_line: "Creature", cmc: 6, mana_cost: "{5}{B}" }),
+    card("Expensive Two", { type_line: "Creature", cmc: 6, mana_cost: "{5}{B}" }),
+    card("Expensive Three", { type_line: "Creature", cmc: 6, mana_cost: "{5}{B}" }),
+  ];
+  const result = analyzeOpeningHand({
+    deck: { main: cards.map((item) => ({ qty: 1, name: item.name })) },
+    hand: cards.map((item) => ({ name: item.name })),
+    cardMap: mapOf(cards),
+    analysis: { colorPips: { G: 3, B: 9 } },
+  });
+
+  assert.ok(result.concerns.some((item) => item.includes("black mana needed by its early spells")));
+  assert.ok(result.concerns.some((item) => item.includes("cannot produce mana")));
+});
+
+test("the goldfish draws on turn one, uses colorless mana, and can cast a Commander", () => {
+  const cards = [
+    card("Wastes", { type_line: "Basic Land — Wastes", cmc: 0, mana_cost: "", produced_mana: ["C"] }),
+    card("Sol Ring", { type_line: "Artifact", cmc: 1, mana_cost: "{1}", oracle_text: "{T}: Add {C}{C}.", produced_mana: ["C"] }),
+    card("Colorless Spell", { type_line: "Artifact", cmc: 1, mana_cost: "{C}" }),
+    card("Island", { type_line: "Basic Land — Island", cmc: 0, mana_cost: "", produced_mana: ["U"] }),
+    card("Commander", { type_line: "Legendary Creature", cmc: 2, mana_cost: "{1}{U}", oracle_text: "Flying." }),
+  ];
+  const plan = buildGoldfishPlan({
+    hand: [{ name: "Wastes" }, { name: "Sol Ring" }, { name: "Colorless Spell" }, { name: "Island" }],
+    futureDraws: [{ name: "Island", copyIndex: 1 }, { name: "Colorless Spell", copyIndex: 1 }, { name: "Colorless Spell", copyIndex: 2 }],
+    commanders: [{ name: "Commander" }],
+    cardMap: mapOf(cards),
+    analysis: { colorPips: { U: 4 } },
+  });
+
+  assert.equal(plan.turns.length, 3);
+  assert.equal(plan.turns[0].draw.name, "Island");
+  assert.ok(plan.turns.flatMap((turn) => turn.plays).some((play) => play.name === "Colorless Spell"));
+  assert.ok(plan.turns.flatMap((turn) => turn.plays).some((play) => play.name === "Commander" && play.zone === "command"));
+});
+
+test("extreme land counts are capped and future draws do not alter the mulligan grade", () => {
+  const land = card("Forest", { type_line: "Basic Land — Forest", cmc: 0, mana_cost: "", produced_mana: ["G"] });
+  const spell = card("Cheap Spell", { type_line: "Creature", cmc: 2, mana_cost: "{1}{G}" });
+  const cards = [land, spell];
+  const deck = { main: [{ qty: 7, name: "Forest" }, { qty: 7, name: "Cheap Spell" }] };
+  for (const landCount of [0, 1, 6, 7]) {
+    const hand = [...Array.from({ length: landCount }, () => ({ name: "Forest" })), ...Array.from({ length: 7 - landCount }, () => ({ name: "Cheap Spell" }))];
+    const result = analyzeOpeningHand({ deck, hand, cardMap: mapOf(cards), analysis: { colorPips: { G: 7 } } });
+    assert.ok(result.score <= 44, `${landCount}-land hand was ${result.score}`);
+    assert.equal(result.verdict.label, "Mulligan");
+  }
+  const hand = [{ name: "Forest" }, ...Array.from({ length: 6 }, () => ({ name: "Cheap Spell" }))];
+  const withoutDraws = analyzeOpeningHand({ deck, hand, cardMap: mapOf(cards), analysis: { colorPips: { G: 7 } } });
+  const withDraws = analyzeOpeningHand({ deck, hand, cardMap: mapOf(cards), analysis: { colorPips: { G: 7 } }, futureDraws: [{ name: "Forest" }, { name: "Forest" }, { name: "Forest" }] });
+  assert.equal(withoutDraws.score, withDraws.score);
+  assert.equal(withoutDraws.verdict.label, withDraws.verdict.label);
 });
